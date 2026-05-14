@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! Integration tests for the UHID bridge.
 //!
 //! Tests marked `#[ignore]` require `/dev/uhid` access (typically root or

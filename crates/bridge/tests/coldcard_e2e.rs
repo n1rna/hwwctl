@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! Coldcard end-to-end test.
 //!
 //! Replicates the exact sigvault-desktop discovery flow:

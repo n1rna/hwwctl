@@ -39,9 +39,33 @@
 //! KERNEL=="uhid", MODE="0660", GROUP="plugdev"
 //! ```
 
+// Concrete bridge implementations all sit on Linux UHID (`/dev/uhid`)
+// — no portable equivalent exists. The modules below are Linux-only;
+// the `Bridge` trait + shared types stay cross-platform so the app
+// layer can use them on any OS. On non-Linux a runtime attempt to
+// instantiate a UHID bridge returns the error from
+// [`unsupported_platform_error`].
+#[cfg(target_os = "linux")]
 pub mod generic;
+#[cfg(target_os = "linux")]
 pub mod trezor;
+#[cfg(target_os = "linux")]
 pub mod uhid;
+
+/// Helper to produce the canonical "tried to use UHID on a non-Linux
+/// host" error. Cross-platform consumers call this from their fall-
+/// through arm so the error message is identical everywhere.
+#[cfg(not(target_os = "linux"))]
+pub fn unsupported_platform_error(context: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{context}: UHID virtual HID devices require Linux (`/dev/uhid`); \
+         this host is {}. Wallets that need USB-bridged transport \
+         (BitBox02, Coldcard) are not available on this platform. \
+         Direct-TCP wallets (Trezor over UDP, Ledger Speculos, Jade, \
+         Specter) work without UHID.",
+        std::env::consts::OS,
+    )
+}
 
 use std::time::Instant;
 

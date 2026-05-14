@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! Reproduction of the full TUI BitBox02 `l` key flow.
 //!
 //! Simulates exactly what happens when user presses `s` then `l`:

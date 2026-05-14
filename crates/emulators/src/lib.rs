@@ -6,6 +6,17 @@
 
 pub mod generic;
 pub mod trezor;
+pub mod wallet_config;
+
+// Re-export the unified config table at the crate root so consumers
+// don't have to know the module name. This is the canonical source
+// of per-wallet metadata (transport, ports, HID descriptor, init
+// style, startup timeouts, binary candidates, macOS support).
+pub use wallet_config::{
+    for_wallet, HidConfig, HostMode, InitStyle, TransportKind, WalletConfig, ALL_WALLETS, BITBOX02,
+    BITBOX02_HID_REPORT_DESCRIPTOR, COLDCARD, COLDCARD_HID_REPORT_DESCRIPTOR, JADE, LEDGER,
+    LEDGER_HID_REPORT_DESCRIPTOR, SPECTER, TREZOR, TREZOR_HID_REPORT_DESCRIPTOR,
+};
 
 use std::path::PathBuf;
 
