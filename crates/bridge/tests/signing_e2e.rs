@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! End-to-end signing tests using async-hwi.
 //!
 //! Tests xpub retrieval, policy registration, and PSBT signing

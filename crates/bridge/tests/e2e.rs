@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! End-to-end integration tests.
 //!
 //! These tests start real emulators, exercise protocol commands, and verify

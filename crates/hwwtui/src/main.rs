@@ -25,24 +25,51 @@
 //! | `↑` / `↓` / `←` / `→` | Swipe gesture via debug link |
 //! | `q` / `Ctrl-C` | Quit |
 
+// The TUI binary needs Linux UHID to be useful — every wallet either
+// bridges through `/dev/uhid` or is reached on a TCP/UDP socket the
+// Linux-only emulator spawns. Phase 2b makes this cross-platform
+// properly (gates the UHID consumers and leaves the TCP/UDP wallets
+// reachable on macOS). For now, the binary entry just refuses to
+// build on non-Linux so the rest of the workspace can compile on
+// dev macOS machines while the unification refactor lands.
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!(
+        "hwwtui's TUI binary currently requires Linux for UHID virtual HID \
+         device support. Phase 2b will add a macOS-compatible subset \
+         (Trezor / Ledger / Jade / Specter via TCP/UDP only)."
+    );
+    std::process::exit(1);
+}
+
+#[cfg(target_os = "linux")]
 mod app;
+#[cfg(target_os = "linux")]
 mod config;
+#[cfg(target_os = "linux")]
 mod ui;
 
+#[cfg(target_os = "linux")]
 use anyhow::Context;
+#[cfg(target_os = "linux")]
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+#[cfg(target_os = "linux")]
 use ratatui::{backend::CrosstermBackend, Terminal};
+#[cfg(target_os = "linux")]
 use std::{io, time::Duration};
+#[cfg(target_os = "linux")]
 use tracing::info;
 
+#[cfg(target_os = "linux")]
 use app::{Action, App};
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+#[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Set up tracing to a file so it doesn't interfere with the TUI.
@@ -91,6 +118,7 @@ async fn main() -> anyhow::Result<()> {
 
 // ── Event loop ────────────────────────────────────────────────────────────────
 
+#[cfg(target_os = "linux")]
 async fn run_event_loop<B>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()>
 where
     B: ratatui::backend::Backend,
@@ -194,6 +222,7 @@ where
 
 // ── Tracing setup ─────────────────────────────────────────────────────────────
 
+#[cfg(target_os = "linux")]
 fn init_tracing() {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -219,6 +248,7 @@ fn init_tracing() {
 /// Check /dev/uhid access and print a helpful message if missing.
 /// Does NOT abort — the TUI will still start, and the bridge will log
 /// a non-fatal warning when it fails to create a UHID device.
+#[cfg(target_os = "linux")]
 fn check_uhid_access() {
     use std::path::Path;
 

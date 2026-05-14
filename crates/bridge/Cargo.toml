@@ -11,6 +11,15 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 protocol = { path = "../protocol" }
 emulators = { path = "../emulators" }
+
+# UHID is a Linux kernel interface (`/dev/uhid`). macOS / Windows
+# don't have an equivalent. Gating the dep on Linux lets the crate
+# compile on dev machines on those OSes; the concrete bridge impls
+# (`generic`, `trezor`, `uhid` modules) are themselves gated below
+# and replaced with stubs that return a "not supported on this
+# platform" error. The `Bridge` trait + shared types stay cross-
+# platform so the app layer can still reference them.
+[target.'cfg(target_os = "linux")'.dependencies]
 uhid-virt = { workspace = true }
 
 [dev-dependencies]

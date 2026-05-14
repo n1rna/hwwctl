@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 //! BitBox02 end-to-end test.
 //!
 //! Exercises the full flow that sigvault-desktop uses:
