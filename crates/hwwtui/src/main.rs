@@ -199,10 +199,8 @@ where
                         _ => {}
                     }
                 }
-                Event::Mouse(mouse) => {
-                    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-                        ui::handle_mouse_click(app, mouse.column, mouse.row);
-                    }
+                Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
+                    ui::handle_mouse_click(app, mouse.column, mouse.row);
                 }
                 Event::Resize(_, _) => {} // terminal handles redraw automatically
                 _ => {}
