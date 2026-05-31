@@ -41,15 +41,33 @@ impl VirtualHidDevice {
     /// - `name`: Human-readable device name.
     /// - `report_descriptor`: Raw HID report descriptor bytes.
     ///
+    /// Defaults `uniq` (HID serial) to empty. Use [`Self::new_with_serial`]
+    /// when the caller needs to tell two devices apart at enumeration time.
+    ///
     /// # Errors
     ///
     /// Returns an error if `/dev/uhid` cannot be opened (likely a permissions
     /// problem — see the module-level note on udev rules).
     pub fn new(vid: u16, pid: u16, name: &str, report_descriptor: &[u8]) -> anyhow::Result<Self> {
+        Self::new_with_serial(vid, pid, name, "", report_descriptor)
+    }
+
+    /// Like [`Self::new`] but pins the HID serial (`uniq`) to a specific
+    /// value. The kernel exposes this through `hidraw`'s `HIDIOCGRAWUNIQ`
+    /// ioctl and `hidapi` returns it as the `serial_number` field — so
+    /// distinct values let multiple emulators of the same wallet model
+    /// coexist and be disambiguated by tests.
+    pub fn new_with_serial(
+        vid: u16,
+        pid: u16,
+        name: &str,
+        serial: &str,
+        report_descriptor: &[u8],
+    ) -> anyhow::Result<Self> {
         let params = CreateParams {
             name: name.to_string(),
             phys: String::new(),
-            uniq: String::new(),
+            uniq: serial.to_string(),
             bus: Bus::USB,
             vendor: vid as u32,
             product: pid as u32,

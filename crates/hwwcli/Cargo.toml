@@ -1,0 +1,27 @@
+[package]
+name = "hwwcli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI + daemon (hwwctl) for driving hardware-wallet emulators from tests."
+
+[[bin]]
+name = "hwwctl"
+path = "src/main.rs"
+
+[dependencies]
+control = { path = "../control" }
+emulators = { path = "../emulators" }
+bridge = { path = "../bridge" }
+bundler = { path = "../bundler" }
+
+tokio = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+libc = { workspace = true }
+nix = { workspace = true }
