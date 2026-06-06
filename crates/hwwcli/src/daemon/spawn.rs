@@ -158,7 +158,14 @@ async fn start_bitbox02(
     )
     .with_arg("--port")
     .with_arg(&port_str)
-    .with_startup_timeout(Duration::from_secs(timeout_secs));
+    .with_startup_timeout(Duration::from_secs(timeout_secs))
+    // BitBox02 simulator is single-client. Any readiness probe —
+    // even SO_LINGER(0)/RST — races the simulator's initial socket
+    // write and gives it SIGPIPE before our bridge gets a chance to
+    // connect. Skip the probe; the bridge connect is the first
+    // session, and a stuck-binding simulator surfaces as a clean
+    // ECONNREFUSED a moment later.
+    .with_skip_probe_delay(Duration::from_millis(1500));
 
     if let Err(e) = emu.start().await {
         return Err(CtlError::new(
