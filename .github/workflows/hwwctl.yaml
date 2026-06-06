@@ -120,13 +120,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve bitbox02-firmware ref
+        id: bb02-ref
+        # Centralizes the pin so the cache key and the checkout step
+        # stay in sync. Bump this when you want to pick up a newer
+        # simulator. `firmware/v9.23.1` is the most recent tag with a
+        # working simulator target on linux/x86_64; older releases
+        # require ancient toolchains.
+        run: |
+          echo "ref=firmware/v9.23.1" >> "$GITHUB_OUTPUT"
+
+      - name: Try restoring cached bundle
+        id: bundle-cache
+        uses: actions/cache@v4
+        with:
+          # The bundle tarball + a sentinel file so a stale cache
+          # without the tarball doesn't false-hit.
+          path: hwwtui-bitbox02-linux-x86_64.tar.gz
+          # Key includes the firmware ref + the build script hash so
+          # any change to either rebuilds. The hwwcli code itself
+          # does NOT invalidate the bundle — only the simulator
+          # output matters.
+          key: bb02-bundle-${{ steps.bb02-ref.outputs.ref }}-${{ hashFiles('scripts/build/bitbox02.sh') }}
+
       - name: Checkout bitbox02-firmware
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: BitBoxSwiss/bitbox02-firmware
           path: bitbox02-firmware
           submodules: recursive
           fetch-depth: 0
+          ref: ${{ steps.bb02-ref.outputs.ref }}
 
       - name: Install system dependencies
         run: |
@@ -150,15 +175,21 @@ jobs:
           restore-keys: cargo-hwwctl-bb02-
 
       - name: Install Rust tools for BitBox02 firmware build
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           BB_TOOLCHAIN=$(grep 'channel' bitbox02-firmware/src/rust/rust-toolchain.toml | cut -d'"' -f2)
           rustup toolchain install "${BB_TOOLCHAIN}"
           rustup component add rust-src --toolchain "${BB_TOOLCHAIN}-x86_64-unknown-linux-gnu"
           cargo install cbindgen bindgen-cli
-          cd bitbox02-firmware/tools/prost-build-proto && cargo build --release
-          cp target/release/prost-build-proto ~/.cargo/bin/
+          # Build prost-build-proto. Use --manifest-path so cargo
+          # doesn't walk up looking for a workspace; combined with
+          # [workspace] exclude in our root Cargo.toml this keeps the
+          # firmware build isolated.
+          cargo build --release --manifest-path bitbox02-firmware/tools/prost-build-proto/Cargo.toml
+          cp bitbox02-firmware/tools/prost-build-proto/target/release/prost-build-proto ~/.cargo/bin/
 
       - name: Build BitBox02 simulator bundle
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
         run: |
           FIRMWARE_DIR=bitbox02-firmware ./scripts/build/bitbox02.sh
 
