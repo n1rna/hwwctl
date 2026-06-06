@@ -172,6 +172,15 @@ impl GenericEmulator {
         self
     }
 
+    /// Expose the shared ring buffer that captures the child
+    /// process's stdout + stderr. Callers (e.g. the hwwctl daemon)
+    /// hold their own `Arc` to read from it without owning the
+    /// `Emulator` exclusively — the reader tasks spawned in `start`
+    /// keep pushing into the same buffer.
+    pub fn output_buffer(&self) -> Arc<Mutex<VecDeque<String>>> {
+        Arc::clone(&self.output_lines)
+    }
+
     /// Skip the readiness probe entirely. After spawning the child
     /// process we sleep `delay` and mark the emulator `Running`. The
     /// caller's next TCP/Unix connect is the *first* client session.

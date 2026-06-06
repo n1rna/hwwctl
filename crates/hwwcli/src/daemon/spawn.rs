@@ -11,9 +11,13 @@
 
 use std::collections::HashMap;
 #[cfg(target_os = "linux")]
+use std::collections::VecDeque;
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 use bridge::generic::{BridgeTransport, GenericBridge, GenericBridgeConfig};
@@ -114,6 +118,7 @@ async fn start_bitbox02(
         .unwrap_or_else(|| PathBuf::from("."));
 
     // 2. Allocate per-instance resources.
+    let started_at = Instant::now();
     let id_suffix = random_suffix();
     let id = InstanceId::new(format!("bitbox02-{id_suffix}"));
     let serial = format!("hwwctl-bb02-{id_suffix}");
@@ -222,15 +227,50 @@ async fn start_bitbox02(
         }
     };
 
-    // 5. Spawn a background drain so the bridge's mpsc doesn't block.
-    //    Phase 2b will route this into a per-instance log buffer; for
-    //    now we just consume.
+    // 5. Wire the bridge's intercept channel into the per-instance
+    //    log buffer + counters. Bounded ring so a chatty session
+    //    doesn't grow without limit between `logs` queries.
+    let bridge_log: Arc<Mutex<VecDeque<super::instance::BridgeLog>>> = Arc::new(Mutex::new(
+        VecDeque::with_capacity(super::instance::LOG_BUFFER_CAP),
+    ));
+    let bridge_stats = Arc::new(super::instance::BridgeStatsCounters::default());
+    let emu_output = emu.output_buffer();
+
     let log_drain = {
         let id = id.clone();
+        let bridge_log = Arc::clone(&bridge_log);
+        let bridge_stats = Arc::clone(&bridge_stats);
         tokio::spawn(async move {
+            use std::sync::atomic::Ordering::Relaxed;
             let mut rx = bridge_rx;
             while let Some(msg) = rx.recv().await {
-                debug!(%id, ?msg.direction, "bridge msg");
+                // raw_hex is `"3f 23 ..."` — count the number of
+                // bytes by counting whitespace-separated tokens.
+                // Cheaper than re-deriving from the (already-
+                // dropped) payload.
+                let bytes = msg.raw_hex.split_whitespace().count() as u64;
+                match msg.direction {
+                    bridge::Direction::HostToDevice => {
+                        bridge_stats.host_to_device_reports.fetch_add(1, Relaxed);
+                        bridge_stats.host_to_device_bytes.fetch_add(bytes, Relaxed);
+                    }
+                    bridge::Direction::DeviceToHost => {
+                        bridge_stats.device_to_host_reports.fetch_add(1, Relaxed);
+                        bridge_stats.device_to_host_bytes.fetch_add(bytes, Relaxed);
+                    }
+                }
+                let entry = super::instance::BridgeLog {
+                    at: Instant::now(),
+                    direction: msg.direction,
+                    raw_hex: msg.raw_hex,
+                };
+                let mut buf = bridge_log.lock().unwrap();
+                if buf.len() >= super::instance::LOG_BUFFER_CAP {
+                    buf.pop_front();
+                }
+                buf.push_back(entry);
+                drop(buf);
+                debug!(%id, "bridge msg captured");
             }
         })
     };
@@ -270,6 +310,10 @@ async fn start_bitbox02(
         emulator: Box::new(emu),
         bridge: Some(Box::new(bridge)),
         log_drain: Some(log_drain),
+        started_at,
+        emu_output,
+        bridge_log,
+        bridge_stats,
     };
 
     let summary = inst.summary();

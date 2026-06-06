@@ -7,8 +7,8 @@
 use std::path::PathBuf;
 
 use control::{
-    read_frame, write_frame, InstanceId, Request, Response, StartRequest, StatusRequest,
-    StopRequest,
+    read_frame, write_frame, BridgeStatsRequest, InstanceId, LogsRequest, Request, Response,
+    StartRequest, StatusRequest, StopRequest,
 };
 
 use crate::auto_spawn;
@@ -75,6 +75,21 @@ fn build_request(cmd: Cmd) -> anyhow::Result<Request> {
         }),
         Cmd::Status { instance } => Request::Status(StatusRequest {
             instance: instance.map(InstanceId::new),
+        }),
+        Cmd::Logs {
+            instance,
+            tail,
+            source,
+        } => {
+            let source = source.parse().map_err(|e| anyhow::anyhow!("{e}"))?;
+            Request::Logs(LogsRequest {
+                instance: InstanceId::new(instance),
+                tail,
+                source,
+            })
+        }
+        Cmd::BridgeStats { instance } => Request::BridgeStats(BridgeStatsRequest {
+            instance: InstanceId::new(instance),
         }),
         Cmd::Shutdown => Request::Shutdown,
     })

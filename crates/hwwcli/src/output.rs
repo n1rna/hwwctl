@@ -4,7 +4,7 @@
 //! tests). Both go to stdout on success; errors go to stderr, plus
 //! stdout in JSON mode so test code only has to parse one stream.
 
-use control::{InstanceSummary, Response};
+use control::{BridgeStatsSnapshot, InstanceSummary, LogEntry, LogSource, Response};
 use serde::Serialize;
 
 /// Print a client-side (pre-daemon) error: connection problems,
@@ -73,6 +73,16 @@ pub fn print_response(resp: &Response, json: bool) {
                 }
             }
         }
+        Response::Logs { entries } => {
+            if entries.is_empty() {
+                println!("(no log entries)");
+            } else {
+                for e in entries {
+                    print_log_entry(e);
+                }
+            }
+        }
+        Response::BridgeStats(s) => print_bridge_stats(s),
         Response::ShuttingDown => {
             println!("daemon is shutting down");
         }
@@ -80,6 +90,31 @@ pub fn print_response(resp: &Response, json: bool) {
             eprintln!("error [{:?}]: {}", e.code, e.message);
         }
     }
+}
+
+fn print_log_entry(e: &LogEntry) {
+    let src = match e.source {
+        LogSource::Emulator => "emu",
+        LogSource::Bridge => "br ",
+        LogSource::All => "*  ",
+    };
+    if e.source == LogSource::Bridge {
+        println!("  {:>8}ms  {src}  {} {}", e.ts_ms, e.direction, e.raw_hex);
+    } else {
+        println!("  {:>8}ms  {src}  {}", e.ts_ms, e.message);
+    }
+}
+
+fn print_bridge_stats(s: &BridgeStatsSnapshot) {
+    println!("  instance         {}", s.instance);
+    println!(
+        "  host → device    {:>6} reports  {:>8} bytes",
+        s.host_to_device_reports, s.host_to_device_bytes
+    );
+    println!(
+        "  device → host    {:>6} reports  {:>8} bytes",
+        s.device_to_host_reports, s.device_to_host_bytes
+    );
 }
 
 fn print_summary(s: &InstanceSummary) {

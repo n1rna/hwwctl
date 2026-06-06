@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 
 use control::{
-    Error as CtlError, ErrorCode, InstanceId, InstanceState, InstanceSummary, StartRequest,
+    BridgeStatsSnapshot, Error as CtlError, ErrorCode, InstanceId, InstanceState, InstanceSummary,
+    LogEntry, LogsRequest, StartRequest,
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
@@ -30,6 +31,14 @@ enum Command {
     Status {
         instance: Option<InstanceId>,
         reply: oneshot::Sender<Result<Vec<InstanceSummary>, CtlError>>,
+    },
+    Logs {
+        req: LogsRequest,
+        reply: oneshot::Sender<Result<Vec<LogEntry>, CtlError>>,
+    },
+    BridgeStats {
+        instance: InstanceId,
+        reply: oneshot::Sender<Result<BridgeStatsSnapshot, CtlError>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -71,6 +80,25 @@ impl Registry {
     ) -> Result<Vec<InstanceSummary>, CtlError> {
         let (reply, rx) = oneshot::channel();
         self.send(Command::Status { instance, reply }).await?;
+        rx.await
+            .map_err(|_| internal("registry dropped reply"))
+            .and_then(|r| r)
+    }
+
+    pub async fn logs(&self, req: LogsRequest) -> Result<Vec<LogEntry>, CtlError> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::Logs { req, reply }).await?;
+        rx.await
+            .map_err(|_| internal("registry dropped reply"))
+            .and_then(|r| r)
+    }
+
+    pub async fn bridge_stats(
+        &self,
+        instance: InstanceId,
+    ) -> Result<BridgeStatsSnapshot, CtlError> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Command::BridgeStats { instance, reply }).await?;
         rx.await
             .map_err(|_| internal("registry dropped reply"))
             .and_then(|r| r)
@@ -118,6 +146,26 @@ async fn run_loop(mut rx: mpsc::Receiver<Command>) {
                         )),
                     },
                     None => Ok(instances.values().map(Instance::summary).collect()),
+                };
+                let _ = reply.send(result);
+            }
+            Command::Logs { req, reply } => {
+                let result = match instances.get(&req.instance) {
+                    Some(inst) => Ok(inst.collect_logs(req.source, req.tail)),
+                    None => Err(CtlError::new(
+                        ErrorCode::InstanceNotFound,
+                        format!("no instance with id '{}'", req.instance),
+                    )),
+                };
+                let _ = reply.send(result);
+            }
+            Command::BridgeStats { instance, reply } => {
+                let result = match instances.get(&instance) {
+                    Some(inst) => Ok(inst.bridge_stats.snapshot(&inst.id)),
+                    None => Err(CtlError::new(
+                        ErrorCode::InstanceNotFound,
+                        format!("no instance with id '{instance}'"),
+                    )),
                 };
                 let _ = reply.send(result);
             }
