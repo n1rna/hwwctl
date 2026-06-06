@@ -49,8 +49,8 @@ jobs:
         run: FIRMWARE_DIR=trezor-firmware ./scripts/build/trezor.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-trezor-linux-x86_64
-          path: hwwtui-trezor-linux-x86_64.tar.gz
+          name: hwwctl-trezor-linux-x86_64
+          path: hwwctl-trezor-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -89,8 +89,8 @@ jobs:
         run: FIRMWARE_DIR=bitbox02-firmware ./scripts/build/bitbox02.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-bitbox02-linux-x86_64
-          path: hwwtui-bitbox02-linux-x86_64.tar.gz
+          name: hwwctl-bitbox02-linux-x86_64
+          path: hwwctl-bitbox02-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -119,8 +119,8 @@ jobs:
         run: FIRMWARE_DIR=coldcard-firmware ./scripts/build/coldcard.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-coldcard-linux-x86_64
-          path: hwwtui-coldcard-linux-x86_64.tar.gz
+          name: hwwctl-coldcard-linux-x86_64
+          path: hwwctl-coldcard-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -148,8 +148,8 @@ jobs:
         run: FIRMWARE_DIR=specter-diy ./scripts/build/specter.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-specter-linux-x86_64
-          path: hwwtui-specter-linux-x86_64.tar.gz
+          name: hwwctl-specter-linux-x86_64
+          path: hwwctl-specter-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -170,8 +170,8 @@ jobs:
         run: FIRMWARE_DIR=app-bitcoin-new ./scripts/build/ledger.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-ledger-linux-x86_64
-          path: hwwtui-ledger-linux-x86_64.tar.gz
+          name: hwwctl-ledger-linux-x86_64
+          path: hwwctl-ledger-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -192,8 +192,8 @@ jobs:
         run: FIRMWARE_DIR=jade-firmware ./scripts/build/jade.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-jade-linux-x86_64
-          path: hwwtui-jade-linux-x86_64.tar.gz
+          name: hwwctl-jade-linux-x86_64
+          path: hwwctl-jade-linux-x86_64.tar.gz
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -224,21 +224,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BUNDLE_VERSION }}
-          name: "hwwtui ${{ env.BUNDLE_VERSION }}"
+          name: "hwwctl ${{ env.BUNDLE_VERSION }}"
           body: |
-            Emulator firmware bundles for hwwtui ${{ env.BUNDLE_VERSION }}.
+            Emulator firmware bundles for hwwctl ${{ env.BUNDLE_VERSION }}.
 
             Each tarball contains the emulator binary, required runtime data, and a
             `bundle-info.json` manifest.
 
             | Wallet | Asset |
             |--------|-------|
-            | Trezor | `hwwtui-trezor-linux-x86_64.tar.gz` |
-            | BitBox02 | `hwwtui-bitbox02-linux-x86_64.tar.gz` |
-            | Coldcard | `hwwtui-coldcard-linux-x86_64.tar.gz` |
-            | Specter | `hwwtui-specter-linux-x86_64.tar.gz` |
-            | Ledger | `hwwtui-ledger-linux-x86_64.tar.gz` (requires Docker) |
-            | Jade | `hwwtui-jade-linux-x86_64.tar.gz` (requires Docker) |
+            | Trezor | `hwwctl-trezor-linux-x86_64.tar.gz` |
+            | BitBox02 | `hwwctl-bitbox02-linux-x86_64.tar.gz` |
+            | Coldcard | `hwwctl-coldcard-linux-x86_64.tar.gz` |
+            | Specter | `hwwctl-specter-linux-x86_64.tar.gz` |
+            | Ledger | `hwwctl-ledger-linux-x86_64.tar.gz` (requires Docker) |
+            | Jade | `hwwctl-jade-linux-x86_64.tar.gz` (requires Docker) |
           draft: false
           prerelease: false
           files: release-assets/*.tar.gz

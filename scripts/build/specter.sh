@@ -5,14 +5,14 @@
 #   BUNDLE_VERSION  – version string for bundle-info.json (default: "dev")
 #   FIRMWARE_DIR    – path to checked-out specter-diy repo (default: "specter-diy")
 #
-# Produces: hwwtui-specter-linux-x86_64.tar.gz in the current directory.
+# Produces: hwwctl-specter-linux-x86_64.tar.gz in the current directory.
 set -euo pipefail
 
 BUNDLE_VERSION="${BUNDLE_VERSION:-dev}"
 FIRMWARE_DIR="$(cd "${FIRMWARE_DIR:-specter-diy}" && pwd)"
 WORK_DIR="$(pwd)"
 PLATFORM="linux-x86_64"
-BUNDLE_DIR="${WORK_DIR}/hwwtui-specter-${PLATFORM}"
+BUNDLE_DIR="${WORK_DIR}/hwwctl-specter-${PLATFORM}"
 
 echo "==> Building Specter unix simulator from ${FIRMWARE_DIR}"
 
@@ -56,5 +56,5 @@ cat > "${BUNDLE_DIR}/bundle-info.json" <<EOF
 }
 EOF
 
-tar czf "${WORK_DIR}/hwwtui-specter-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwtui-specter-${PLATFORM}"
-echo "==> Done: hwwtui-specter-${PLATFORM}.tar.gz"
+tar czf "${WORK_DIR}/hwwctl-specter-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwctl-specter-${PLATFORM}"
+echo "==> Done: hwwctl-specter-${PLATFORM}.tar.gz"

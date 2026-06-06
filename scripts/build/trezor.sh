@@ -5,14 +5,14 @@
 #   BUNDLE_VERSION  – version string for bundle-info.json (default: "dev")
 #   FIRMWARE_DIR    – path to checked-out trezor-firmware repo (default: "trezor-firmware")
 #
-# Produces: hwwtui-trezor-linux-x86_64.tar.gz in the current directory.
+# Produces: hwwctl-trezor-linux-x86_64.tar.gz in the current directory.
 set -euo pipefail
 
 BUNDLE_VERSION="${BUNDLE_VERSION:-dev}"
 FIRMWARE_DIR="$(cd "${FIRMWARE_DIR:-trezor-firmware}" && pwd)"
 WORK_DIR="$(pwd)"
 PLATFORM="linux-x86_64"
-BUNDLE_DIR="${WORK_DIR}/hwwtui-trezor-${PLATFORM}"
+BUNDLE_DIR="${WORK_DIR}/hwwctl-trezor-${PLATFORM}"
 
 echo "==> Building Trezor emulator from ${FIRMWARE_DIR}"
 
@@ -93,5 +93,5 @@ cat > "${BUNDLE_DIR}/bundle-info.json" <<EOF
 }
 EOF
 
-tar czf "${WORK_DIR}/hwwtui-trezor-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwtui-trezor-${PLATFORM}"
-echo "==> Done: hwwtui-trezor-${PLATFORM}.tar.gz"
+tar czf "${WORK_DIR}/hwwctl-trezor-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwctl-trezor-${PLATFORM}"
+echo "==> Done: hwwctl-trezor-${PLATFORM}.tar.gz"

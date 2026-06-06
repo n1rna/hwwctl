@@ -40,7 +40,7 @@ The debug link (`crates/protocol/src/trezor_debug.rs`) provides:
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/trezor/
+~/.hwwctl/bundles/trezor/
 ├── manifest.json
 ├── trezor-emu-core        # Main binary
 ├── lib/                   # Bundled .so files (SDL2, etc.)
@@ -53,7 +53,7 @@ The debug link (`crates/protocol/src/trezor_debug.rs`) provides:
 
 | Variable | Value | Purpose |
 |---|---|---|
-| `TREZOR_PROFILE_DIR` | `/tmp/hwwtui-trezor` | Flash/SD card state |
+| `TREZOR_PROFILE_DIR` | `/tmp/hwwctl-trezor` | Flash/SD card state |
 | `SDL_VIDEODRIVER` | `dummy` | Suppress display window |
 | `TREZOR_UDP_PORT` | `21324` | Main transport port |
 | `LD_LIBRARY_PATH` | `<bundle>/lib/` | Bundled shared libs |
@@ -94,7 +94,7 @@ Not available. BitBox02 has no debug link equivalent. The screen panel shows "Wa
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/bitbox02/
+~/.hwwctl/bundles/bitbox02/
 ├── manifest.json
 ├── bitbox02-simulator     # Main binary
 └── bundle-info.json
@@ -142,7 +142,7 @@ Not available. No debug link equivalent.
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/coldcard/
+~/.hwwctl/bundles/coldcard/
 ├── manifest.json
 ├── micropython            # Main binary
 ├── shared/                # Python modules (MICROPYPATH)
@@ -184,7 +184,7 @@ libffi-dev build-essential autoconf automake libtool libltdl-dev rsync
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/specter/
+~/.hwwctl/bundles/specter/
 ├── manifest.json
 ├── micropython_unix       # Main binary
 ├── boot.py                # Boot script
@@ -228,7 +228,7 @@ Not tested. Would likely need a TCP-to-UHID bridge for USB-based desktop apps.
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/ledger/
+~/.hwwctl/bundles/ledger/
 ├── manifest.json
 ├── bitcoin-app.elf         # Compiled Bitcoin app
 ├── speculos-runner.sh      # Script that starts Docker container
@@ -269,7 +269,7 @@ Would need a TCP-to-UHID bridge. Ledger desktop apps use `hidapi` for USB discov
 ### Bundle Contents
 
 ```
-~/.hwwtui/bundles/jade/
+~/.hwwctl/bundles/jade/
 ├── manifest.json
 ├── jade-qemu              # Docker image export (large)
 └── jade-runner.sh         # Script that loads Docker image and starts container

@@ -49,6 +49,12 @@ pub struct GenericBridgeConfig {
     pub pid: u16,
     /// Human-readable device name shown in HID enumeration.
     pub name: String,
+    /// HID serial number (the kernel's `uniq` attribute). Empty means
+    /// "no serial advertised"; this is fine for a single device but
+    /// gives running siblings of the same VID/PID nothing to
+    /// disambiguate them. The daemon sets a per-instance value so the
+    /// desktop's `hidapi` enumerate can filter by `serial_number`.
+    pub serial: String,
     /// Raw HID report descriptor bytes.
     pub report_descriptor: Vec<u8>,
     /// Size of each HID report in bytes (typically 64).
@@ -69,6 +75,7 @@ impl GenericBridgeConfig {
             vid,
             pid,
             name: name.into(),
+            serial: String::new(),
             report_descriptor: report_descriptor.to_vec(),
             report_size: 64,
             transport,
@@ -78,6 +85,13 @@ impl GenericBridgeConfig {
     /// Override the default report size (64 bytes).
     pub fn with_report_size(mut self, size: usize) -> Self {
         self.report_size = size;
+        self
+    }
+
+    /// Pin the HID serial number for this bridge. See
+    /// [`Self::serial`] for the rationale.
+    pub fn with_serial(mut self, serial: impl Into<String>) -> Self {
+        self.serial = serial.into();
         self
     }
 }
@@ -164,9 +178,14 @@ impl Bridge for GenericBridge {
             "Starting GenericBridge"
         );
 
-        let uhid_device =
-            VirtualHidDevice::new(cfg.vid, cfg.pid, &cfg.name, &cfg.report_descriptor)
-                .with_context(|| format!("Failed to create UHID device '{}'", cfg.name))?;
+        let uhid_device = VirtualHidDevice::new_with_serial(
+            cfg.vid,
+            cfg.pid,
+            &cfg.name,
+            &cfg.serial,
+            &cfg.report_descriptor,
+        )
+        .with_context(|| format!("Failed to create UHID device '{}'", cfg.name))?;
 
         let (intercept_tx, intercept_rx) = mpsc::unbounded_channel::<InterceptedMessage>();
         let (shutdown_a_tx, mut shutdown_a_rx) = oneshot::channel::<()>();
@@ -358,7 +377,7 @@ impl Bridge for GenericBridge {
                         // responses back (unbound sockets get abstract autobind
                         // addresses that MicroPython can't sendto).
                         let client_path =
-                            format!("/tmp/hwwtui-cc-bridge-{}.sock", std::process::id());
+                            format!("/tmp/hwwctl-cc-bridge-{}.sock", std::process::id());
                         let _ = std::fs::remove_file(&client_path);
                         let dgram = match tokio::net::UnixDatagram::bind(&client_path) {
                             Ok(s) => s,

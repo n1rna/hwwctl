@@ -31,7 +31,7 @@ fn bb02_bridge_config() -> GenericBridgeConfig {
 }
 
 fn new_emulator() -> Box<dyn Emulator> {
-    let mgr = BundleManager::new("n1rna/hwwtui").unwrap();
+    let mgr = BundleManager::new("n1rna/hwwctl").unwrap();
     let bin = mgr.emulator_binary_path(WalletType::BitBox02).unwrap();
     let bundle_dir = bin.parent().unwrap().to_path_buf();
     Box::new(
@@ -39,7 +39,7 @@ fn new_emulator() -> Box<dyn Emulator> {
             WalletType::BitBox02,
             bin,
             bundle_dir,
-            PathBuf::from("/tmp/hwwtui-repro-bb02"),
+            PathBuf::from("/tmp/hwwctl-repro-bb02"),
             TransportConfig::Tcp {
                 host: "127.0.0.1".into(),
                 port: 15423,

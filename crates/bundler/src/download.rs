@@ -34,7 +34,7 @@ struct GithubAsset {
 /// Downloads bundles from GitHub Releases.
 pub struct GithubDownloader {
     client: Client,
-    /// `"owner/repo"` e.g. `"user/hwwtui"`.
+    /// `"owner/repo"` e.g. `"user/hwwctl"`.
     repo: String,
 }
 
@@ -42,7 +42,7 @@ impl GithubDownloader {
     /// Create a new downloader for the given `owner/repo`.
     pub fn new(repo: &str) -> Self {
         let client = Client::builder()
-            .user_agent("hwwtui/0.1.0")
+            .user_agent("hwwctl/0.1.0")
             .build()
             .expect("failed to build reqwest client");
         Self {
@@ -54,7 +54,7 @@ impl GithubDownloader {
     /// Fetch the latest GitHub release and return all recognised bundle assets.
     ///
     /// Assets are recognised by the naming convention
-    /// `hwwtui-{wallet}-{platform}.tar.gz`.  Unknown assets are silently
+    /// `hwwctl-{wallet}-{platform}.tar.gz`.  Unknown assets are silently
     /// skipped.
     ///
     /// Returns an error if GitHub responds with a non-200 status (including
@@ -231,7 +231,7 @@ pub async fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> anyhow::Re
                 .context("archive entry has invalid path")?
                 .into_owned();
 
-            // Strip the first component (e.g. "hwwtui-trezor-linux-x86_64/")
+            // Strip the first component (e.g. "hwwctl-trezor-linux-x86_64/")
             // so we don't nest an extra directory.
             let stripped = if entry_path.components().count() > 1 {
                 entry_path
@@ -276,11 +276,11 @@ pub async fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> anyhow::Re
 
 /// Parse an asset filename into `(WalletType, platform_string)`.
 ///
-/// Expected format: `hwwtui-{wallet}-{platform}.tar.gz`
+/// Expected format: `hwwctl-{wallet}-{platform}.tar.gz`
 ///
 /// ```text
-/// hwwtui-trezor-linux-x86_64.tar.gz  -> (Trezor, "linux-x86_64")
-/// hwwtui-bitbox02-linux-x86_64.tar.gz -> (BitBox02, "linux-x86_64")
+/// hwwctl-trezor-linux-x86_64.tar.gz  -> (Trezor, "linux-x86_64")
+/// hwwctl-bitbox02-linux-x86_64.tar.gz -> (BitBox02, "linux-x86_64")
 /// ```
 ///
 /// Returns `None` for names that do not match the convention or contain an
@@ -289,8 +289,8 @@ pub fn parse_asset_name(name: &str) -> Option<(WalletType, String)> {
     // Must end with ".tar.gz"
     let stem = name.strip_suffix(".tar.gz")?;
 
-    // Must start with "hwwtui-"
-    let rest = stem.strip_prefix("hwwtui-")?;
+    // Must start with "hwwctl-"
+    let rest = stem.strip_prefix("hwwctl-")?;
 
     // The wallet identifier may itself contain a hyphen (e.g. "bitbox02" does
     // not, but future names might).  We try each known wallet name as a
@@ -345,32 +345,32 @@ mod tests {
     fn parse_known_assets() {
         let cases = [
             (
-                "hwwtui-trezor-linux-x86_64.tar.gz",
+                "hwwctl-trezor-linux-x86_64.tar.gz",
                 WalletType::Trezor,
                 "linux-x86_64",
             ),
             (
-                "hwwtui-bitbox02-linux-x86_64.tar.gz",
+                "hwwctl-bitbox02-linux-x86_64.tar.gz",
                 WalletType::BitBox02,
                 "linux-x86_64",
             ),
             (
-                "hwwtui-coldcard-linux-aarch64.tar.gz",
+                "hwwctl-coldcard-linux-aarch64.tar.gz",
                 WalletType::Coldcard,
                 "linux-aarch64",
             ),
             (
-                "hwwtui-specter-macos-x86_64.tar.gz",
+                "hwwctl-specter-macos-x86_64.tar.gz",
                 WalletType::Specter,
                 "macos-x86_64",
             ),
             (
-                "hwwtui-ledger-macos-aarch64.tar.gz",
+                "hwwctl-ledger-macos-aarch64.tar.gz",
                 WalletType::Ledger,
                 "macos-aarch64",
             ),
             (
-                "hwwtui-jade-linux-x86_64.tar.gz",
+                "hwwctl-jade-linux-x86_64.tar.gz",
                 WalletType::Jade,
                 "linux-x86_64",
             ),
@@ -388,10 +388,10 @@ mod tests {
     #[test]
     fn parse_unknown_assets_return_none() {
         let bad = [
-            "trezor-linux-x86_64.tar.gz",         // missing hwwtui- prefix
-            "hwwtui-trezor-linux-x86_64.zip",     // wrong extension
-            "hwwtui-unknown-linux-x86_64.tar.gz", // unrecognised wallet
-            "hwwtui-trezor.tar.gz",               // missing platform
+            "trezor-linux-x86_64.tar.gz",         // missing hwwctl- prefix
+            "hwwctl-trezor-linux-x86_64.zip",     // wrong extension
+            "hwwctl-unknown-linux-x86_64.tar.gz", // unrecognised wallet
+            "hwwctl-trezor.tar.gz",               // missing platform
         ];
         for name in &bad {
             assert!(

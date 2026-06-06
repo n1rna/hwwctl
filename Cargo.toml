@@ -1,21 +1,33 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/hwwtui",
     "crates/bridge",
     "crates/emulators",
     "crates/protocol",
     "crates/bundler",
+    "crates/control",
+    "crates/hwwctl",
+]
+# Vendored firmware repos checked out by the bundle-build CI live
+# alongside our workspace root and contain their own Cargo packages
+# (e.g. bitbox02-firmware/tools/prost-build-proto). Without an
+# explicit exclusion, cargo's parent-traversal lands on this manifest
+# and refuses to compile those packages because they aren't members.
+# Excluding the firmware trees keeps cargo away from them when
+# building tools from inside the checkout.
+exclude = [
+    "bitbox02-firmware",
+    "trezor-firmware",
+    "coldcard-firmware",
+    "specter-diy",
+    "speculos",
+    "jade",
 ]
 
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1.50", features = ["full"] }
 async-trait = "0.1.89"
-
-# TUI
-ratatui = "0.30.0"
-crossterm = "0.29.0"
 
 # UHID virtual device
 uhid-virt = "0.0.8"
@@ -48,3 +60,6 @@ tar = "0.4"
 
 # Directory helpers (used by bundler)
 dirs = "6"
+
+# CLI parsing (used by hwwctl)
+clap = { version = "4.5", features = ["derive", "env"] }

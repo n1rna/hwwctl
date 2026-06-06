@@ -1,4 +1,4 @@
-# hwwtui — udev rules for UHID bridge and hardware wallet emulators
+# hwwctl — udev rules for UHID bridge and hardware wallet emulators
 #
 # Install:  just setup-udev
 #

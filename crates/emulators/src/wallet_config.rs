@@ -1,22 +1,9 @@
 //! Single source of truth for per-wallet configuration.
 //!
-//! Before this module existed, the same six tuples (binary name, VID, PID,
-//! HID report descriptor, transport, port, startup timeout, ...) were
-//! re-encoded in four different places:
-//!
-//! - `crates/hwwtui/src/app.rs` — 275-line match block for emulator
-//!   spawning (every wallet's env vars + args + ports).
-//! - `crates/bridge/src/uhid.rs` — VID/PID/report-descriptor constants
-//!   per wallet, addressed by name in `app.rs`'s bridge-setup match.
-//! - `crates/bridge/src/trezor.rs` — Trezor's HID config duplicated.
-//! - `crates/bundler/src/lib.rs` + `storage.rs` — binary candidate
-//!   names and directory paths.
-//!
-//! Each of those sites encodes the same per-wallet metadata
-//! differently, which is the "messy, not unified" problem the
-//! refactor unwinds. This module provides one `WalletConfig` per
-//! wallet plus a single `for_wallet()` lookup; downstream sites
-//! consume it instead of carrying their own copy.
+//! One `WalletConfig` per wallet plus a `for_wallet()` lookup. Every
+//! downstream site (daemon spawn, UHID bridge, bundler) reads from
+//! here instead of carrying its own copy of binary names / VID-PID /
+//! HID report descriptors / transport defaults.
 //!
 //! The struct is `pub` + immutable; adding a new wallet is a single
 //! const definition plus a row in `ALL_WALLETS`. Removing a field
@@ -147,7 +134,7 @@ pub struct WalletConfig {
     /// Docker wallets need more headroom because the container has
     /// to pull / boot.
     pub startup_timeout_secs: u64,
-    /// Binary names to look for under `~/.hwwtui/bundles/{wallet}/`
+    /// Binary names to look for under `~/.hwwctl/bundles/{wallet}/`
     /// when starting. First match wins. Lets the bundler ship
     /// either `trezor-emu-core` or `trezor-emu` depending on what
     /// the firmware build produced.

@@ -60,9 +60,9 @@ const OUTPUT_RING_SIZE: usize = 500;
 /// async fn main() -> anyhow::Result<()> {
 ///     let mut emu = GenericEmulator::new(
 ///         WalletType::BitBox02,
-///         PathBuf::from("/opt/hwwtui/bundles/bitbox02/bitbox02-simulator"),
-///         PathBuf::from("/opt/hwwtui/bundles/bitbox02"),
-///         PathBuf::from("/tmp/hwwtui-bitbox02"),
+///         PathBuf::from("/opt/hwwctl/bundles/bitbox02/bitbox02-simulator"),
+///         PathBuf::from("/opt/hwwctl/bundles/bitbox02"),
+///         PathBuf::from("/tmp/hwwctl-bitbox02"),
 ///         TransportConfig::Tcp { host: "127.0.0.1".into(), port: 15423 },
 ///     );
 ///     emu.start().await?;
@@ -102,6 +102,14 @@ pub struct GenericEmulator {
     /// receiving too many RST packets.
     gentle_probe: bool,
 
+    /// When set, skip the post-spawn TCP/Unix readiness probe and
+    /// just sleep this long before marking the emulator Running. Use
+    /// for single-client servers (notably BitBox02) where any probe
+    /// connect — even with SO_LINGER(0)/RST — risks killing the
+    /// simulator with SIGPIPE mid-handshake before the real client
+    /// (our bridge) can connect.
+    skip_probe_delay: Option<Duration>,
+
     /// Handle to the running child process, if any.
     child: Option<Child>,
 
@@ -131,6 +139,7 @@ impl GenericEmulator {
             args: Vec::new(),
             startup_timeout: DEFAULT_STARTUP_TIMEOUT,
             gentle_probe: false,
+            skip_probe_delay: None,
             child: None,
             status: EmulatorStatus::Stopped,
             output_lines: Arc::new(Mutex::new(VecDeque::new())),
@@ -160,6 +169,30 @@ impl GenericEmulator {
     /// Some emulators crash or close their server after repeated RST probes.
     pub fn with_gentle_probe(mut self) -> Self {
         self.gentle_probe = true;
+        self
+    }
+
+    /// Expose the shared ring buffer that captures the child
+    /// process's stdout + stderr. Callers (e.g. the hwwctl daemon)
+    /// hold their own `Arc` to read from it without owning the
+    /// `Emulator` exclusively — the reader tasks spawned in `start`
+    /// keep pushing into the same buffer.
+    pub fn output_buffer(&self) -> Arc<Mutex<VecDeque<String>>> {
+        Arc::clone(&self.output_lines)
+    }
+
+    /// Skip the readiness probe entirely. After spawning the child
+    /// process we sleep `delay` and mark the emulator `Running`. The
+    /// caller's next TCP/Unix connect is the *first* client session.
+    ///
+    /// Use this for single-client simulators (BitBox02) where any
+    /// readiness probe — even RST-closed — can race the simulator's
+    /// initial banner write and kill it with SIGPIPE. The bridge
+    /// always finds out within milliseconds whether the simulator
+    /// bound its socket, so the worst case of "delay too short" is a
+    /// clean `ECONNREFUSED` from the bridge, not a phantom success.
+    pub fn with_skip_probe_delay(mut self, delay: Duration) -> Self {
+        self.skip_probe_delay = Some(delay);
         self
     }
 
@@ -422,6 +455,22 @@ impl Emulator for GenericEmulator {
         }
 
         self.child = Some(child);
+
+        if let Some(delay) = self.skip_probe_delay {
+            debug!(
+                wallet = %self.wallet_type,
+                delay_ms = delay.as_millis() as u64,
+                "Skipping readiness probe — sleeping then marking Running"
+            );
+            tokio::time::sleep(delay).await;
+            info!(
+                wallet = %self.wallet_type,
+                transport = %self.transport,
+                "Emulator marked ready (skip-probe mode)"
+            );
+            self.status = EmulatorStatus::Running;
+            return Ok(());
+        }
 
         debug!(
             wallet = %self.wallet_type,
