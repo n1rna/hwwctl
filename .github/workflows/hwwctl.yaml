@@ -228,12 +228,26 @@ jobs:
 
       - name: Load uhid kernel module + open /dev/uhid
         run: |
-          sudo modprobe uhid
-          # On default GH runners /dev/uhid is root:root mode 0600.
-          # Easiest: chmod 666 for the duration of the job. We're not
-          # exposing the runner to anything that wasn't already there.
-          sudo chmod 666 /dev/uhid
+          set -euxo pipefail
+          # GitHub-hosted ubuntu runners use Azure kernels with a
+          # trimmed module set — `uhid` is in linux-modules-extra,
+          # not the base image. Install the matching extras package
+          # (try the exact uname-r first, then the Azure meta), then
+          # modprobe.
+          KREL="$(uname -r)"
+          echo "kernel: $KREL"
+          if ! sudo modprobe uhid 2>/dev/null; then
+            sudo apt-get install -y --no-install-recommends \
+              "linux-modules-extra-${KREL}" || \
+              sudo apt-get install -y --no-install-recommends linux-modules-extra-azure
+            sudo modprobe uhid
+          fi
+          # Diagnostics so future failures are obvious.
+          lsmod | grep -E '^uhid' || true
           ls -la /dev/uhid
+          # /dev/uhid is root:root mode 0600 by default. chmod 666 for
+          # the rest of the job — the runner is ephemeral.
+          sudo chmod 666 /dev/uhid
 
       - name: Start daemon
         run: |
