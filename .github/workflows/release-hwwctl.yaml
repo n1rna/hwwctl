@@ -1,0 +1,157 @@
+name: Release hwwctl
+
+# Two ways to fire this:
+#
+# 1. Push a tag of the form `hwwctl-vX.Y.Z` — the workflow checks
+#    out at that tag and reads the version off `crates/hwwcli/Cargo.toml`.
+# 2. Manually via the Actions UI (`workflow_dispatch`). The optional
+#    `tag` input lets you cut a release from any ref without first
+#    pushing a tag — useful for prereleases.
+#
+# Output: a GitHub release with `hwwctl-linux-x86_64.tar.gz` and a
+# matching `.sha256` attached. The sigvault e2e Docker image
+# downloads these by tag.
+
+on:
+  push:
+    tags:
+      - 'hwwctl-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. hwwctl-v0.1.0). Created if it does not exist.'
+        required: true
+        default: 'hwwctl-v0.1.0-dev'
+      prerelease:
+        description: 'Mark as prerelease?'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # required to create releases + upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag + version
+        id: meta
+        run: |
+          set -euo pipefail
+          # Prefer the workflow_dispatch input; fall back to the
+          # pushed ref name (which is the tag for `on: push: tags`).
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          # Tags must follow hwwctl-vX.Y.Z; extract the X.Y.Z part.
+          if [[ "$TAG" =~ ^hwwctl-v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::tag '$TAG' does not match hwwctl-vX.Y.Z[-suffix]"
+            exit 1
+          fi
+          # Cross-check against Cargo.toml so we can't ship a binary
+          # whose --version string disagrees with the release tag.
+          CARGO_VERSION=$(grep -m1 '^version' crates/hwwcli/Cargo.toml | cut -d'"' -f2)
+          # Strip any prerelease suffix off the tag's version for
+          # the Cargo comparison (Cargo.toml carries only X.Y.Z).
+          TAG_CORE="${VERSION%%-*}"
+          if [ "$TAG_CORE" != "$CARGO_VERSION" ]; then
+            echo "::error::tag version core ($TAG_CORE) does not match crates/hwwcli/Cargo.toml ($CARGO_VERSION). Bump Cargo.toml first."
+            exit 1
+          fi
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building $TAG (version $VERSION)"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-hwwctl-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-release-hwwctl-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libusb-1.0-0-dev libudev-dev pkg-config libclang-dev
+
+      - name: Build hwwctl (release)
+        run: cargo build --release -p hwwcli
+
+      - name: Strip + package
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          strip target/release/hwwctl
+          # Tarball matches the bundle convention so consumers can
+          # treat both alike.
+          tar -C target/release -czf dist/hwwctl-linux-x86_64.tar.gz hwwctl
+          ( cd dist && sha256sum hwwctl-linux-x86_64.tar.gz > hwwctl-linux-x86_64.tar.gz.sha256 )
+          ls -la dist
+          ./target/release/hwwctl --version
+
+      - name: Upload build artifacts (workflow artifact, not release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hwwctl-linux-x86_64
+          path: dist/*
+
+  publish:
+    needs: build-linux-x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hwwctl-linux-x86_64
+          path: dist
+
+      - name: Create / update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build-linux-x86_64.outputs.tag }}
+          VERSION: ${{ needs.build-linux-x86_64.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euxo pipefail
+          ls -la dist
+          # Idempotent: if the release already exists (e.g. tag was
+          # pushed then re-run via dispatch), upload --clobber the
+          # assets onto it. Otherwise create it.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists — uploading assets with --clobber"
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            FLAGS=()
+            if [ "${PRERELEASE:-false}" = "true" ]; then FLAGS+=(--prerelease); fi
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "hwwctl $VERSION" \
+              --notes "hwwctl release \`$VERSION\` (Linux x86_64). See the workflow run for build details." \
+              "${FLAGS[@]}" \
+              dist/*
+          fi
+          echo "Release URL:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url
