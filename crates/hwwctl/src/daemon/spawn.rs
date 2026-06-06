@@ -31,7 +31,7 @@ use control::{InstanceState, Wallet};
 #[cfg(target_os = "linux")]
 use emulators::generic::GenericEmulator;
 #[cfg(target_os = "linux")]
-use emulators::{wallet_config, Emulator, EmulatorStatus, TransportConfig, WalletType};
+use emulators::{wallet_config, Emulator, TransportConfig, WalletType};
 #[cfg(target_os = "linux")]
 use tokio::sync::mpsc;
 #[cfg(target_os = "linux")]
@@ -327,7 +327,7 @@ async fn start_bitbox02(
 #[cfg(target_os = "linux")]
 fn bundle_manager() -> Result<BundleManager, CtlError> {
     let repo = std::env::var("HWWCTL_GITHUB_REPO").unwrap_or_else(|_| "n1rna/hwwctl".to_string());
-    BundleManager::new(&repo).map_err(|e| super::internal_err(e))
+    BundleManager::new(&repo).map_err(super::internal_err)
 }
 
 #[cfg(target_os = "linux")]
