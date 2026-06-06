@@ -271,11 +271,24 @@ jobs:
       - name: Start BitBox02 instance
         id: start
         run: |
-          set -euo pipefail
-          out=$(./target/release/hwwctl --json start bitbox02)
+          set -uo pipefail
+          # Capture both the JSON and the exit code without letting
+          # `set -e` abort before we can echo the error envelope. The
+          # daemon returns exit 1 on a daemon-side error; we want to
+          # see WHICH error so future failures are debuggable from
+          # the workflow log alone (artifact upload always happens
+          # too, but reading the log first is faster).
+          out=$(./target/release/hwwctl --json start bitbox02 || true)
           echo "$out" | tee /tmp/start.json
-          # Sanity: shape + state.
-          [ "$(echo "$out" | jq -r .kind)" = "started" ]
+          # Set -e back on now that we've captured the output.
+          set -e
+          kind=$(echo "$out" | jq -r .kind)
+          if [ "$kind" != "started" ]; then
+            echo "::error::hwwctl start did not succeed — kind=$kind"
+            echo "code=$(echo "$out" | jq -r .code)"
+            echo "message=$(echo "$out" | jq -r .message)"
+            exit 1
+          fi
           [ "$(echo "$out" | jq -r .state)" = "running" ]
           serial=$(echo "$out" | jq -r .serial)
           vid=$(echo "$out" | jq -r .vid)
