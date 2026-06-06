@@ -113,6 +113,11 @@ pub enum Request {
     Stop(StopRequest),
     /// Snapshot of one instance, or all if `instance` is None.
     Status(StatusRequest),
+    /// Return the per-instance log buffer (emulator stdout/stderr +
+    /// bridge HID activity).
+    Logs(LogsRequest),
+    /// Return current bridge counters for an instance.
+    BridgeStats(BridgeStatsRequest),
     /// Ask the daemon to exit cleanly, dropping all instances.
     Shutdown,
 }
@@ -147,6 +152,46 @@ pub struct StatusRequest {
     pub instance: Option<InstanceId>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsRequest {
+    pub instance: InstanceId,
+    /// Return at most this many recent entries. `None` ⇒ everything
+    /// currently buffered (capped server-side, see daemon defaults).
+    #[serde(default)]
+    pub tail: Option<usize>,
+    /// Filter by source. Defaults to [`LogSource::All`].
+    #[serde(default)]
+    pub source: LogSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogSource {
+    /// Emulator stdout + stderr.
+    Emulator,
+    /// HID reports observed by the bridge (host → device and device → host).
+    Bridge,
+    #[default]
+    All,
+}
+
+impl std::str::FromStr for LogSource {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "emulator" | "emu" => Ok(LogSource::Emulator),
+            "bridge" | "br" => Ok(LogSource::Bridge),
+            "all" | "" => Ok(LogSource::All),
+            other => Err(format!("unknown log source '{other}'")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BridgeStatsRequest {
+    pub instance: InstanceId,
+}
+
 // ── Responses ─────────────────────────────────────────────────────────────────
 
 /// Top-level response envelope. The daemon always replies exactly once
@@ -164,8 +209,46 @@ pub enum Response {
     Status {
         instances: Vec<InstanceSummary>,
     },
+    Logs {
+        entries: Vec<LogEntry>,
+    },
+    BridgeStats(BridgeStatsSnapshot),
     ShuttingDown,
     Error(Error),
+}
+
+/// One captured log line. `ts_ms` is the daemon's monotonic
+/// timestamp since instance start; useful for ordering across
+/// sources without depending on wall-clock skew.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub ts_ms: u64,
+    pub source: LogSource,
+    pub message: String,
+    /// For bridge entries: `>>` (host→device) or `<<` (device→host).
+    /// Empty for emulator entries.
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub direction: String,
+    /// For bridge entries: hex-encoded 64-byte HID report. Empty for
+    /// emulator entries.
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub raw_hex: String,
+}
+
+/// Bridge byte/packet counters. Numbers are monotonic since the
+/// bridge started; subtract two snapshots to measure activity over
+/// an interval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BridgeStatsSnapshot {
+    pub instance: InstanceId,
+    /// Reports the host sent to the device (output reports).
+    pub host_to_device_reports: u64,
+    /// Bytes inside those reports (sum of report sizes).
+    pub host_to_device_bytes: u64,
+    /// Reports the device sent to the host (input reports).
+    pub device_to_host_reports: u64,
+    /// Bytes inside those reports.
+    pub device_to_host_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

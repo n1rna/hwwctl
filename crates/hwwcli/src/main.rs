@@ -93,6 +93,24 @@ enum Cmd {
         instance: Option<String>,
     },
 
+    /// Show captured logs for an instance.
+    Logs {
+        /// Instance id.
+        instance: String,
+        /// Return only the last N entries (after merge + sort).
+        #[arg(long, short)]
+        tail: Option<usize>,
+        /// Filter by source: `emulator`, `bridge`, or `all` (default).
+        #[arg(long, default_value = "all")]
+        source: String,
+    },
+
+    /// Show bridge byte/packet counters for an instance.
+    BridgeStats {
+        /// Instance id.
+        instance: String,
+    },
+
     /// Ask the daemon to terminate cleanly, dropping all instances.
     Shutdown,
 }

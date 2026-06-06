@@ -85,6 +85,16 @@ jobs:
           echo "$out"
           [ "$(echo "$out" | jq -r .kind)" = "stopped" ]
 
+      - name: Smoke — logs / bridge-stats on unknown id → INSTANCE_NOT_FOUND
+        run: |
+          set -uo pipefail
+          for cmd in "logs bitbox02-ffffff" "bridge-stats bitbox02-ffffff"; do
+            out=$(./target/release/hwwctl --json $cmd || true)
+            echo "$out"
+            [ "$(echo "$out" | jq -r .kind)" = "error" ] || { echo "::error::$cmd did not error"; exit 1; }
+            [ "$(echo "$out" | jq -r .code)" = "INSTANCE_NOT_FOUND" ] || { echo "::error::$cmd wrong code"; exit 1; }
+          done
+
       - name: Smoke — shutdown
         run: |
           set -euo pipefail
@@ -315,6 +325,45 @@ jobs:
           HWWCTL_EXPECT_PID: ${{ steps.start.outputs.pid }}
         run: |
           cargo test --release -p bridge --test hidapi_probe -- --ignored --nocapture
+
+      - name: Logs — emulator source returns at least one line
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json logs --source emulator '${{ steps.start.outputs.instance }}')
+          echo "$out" | tee /tmp/logs-emu.json
+          [ "$(echo "$out" | jq -r .kind)" = "logs" ]
+          count=$(echo "$out" | jq -r '.entries | length')
+          echo "emulator entries: $count"
+          # The BitBox02 simulator writes at least a banner on startup.
+          if [ "$count" -lt 1 ]; then
+            echo "::error::expected ≥1 emulator log entry, got $count"
+            exit 1
+          fi
+          # Every emulator entry must be tagged correctly.
+          bad=$(echo "$out" | jq -r '[.entries[] | select(.source != "emulator")] | length')
+          [ "$bad" = "0" ] || { echo "::error::found $bad non-emulator entries with --source emulator"; exit 1; }
+
+      - name: Logs — tail honors the limit
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json logs --tail 2 '${{ steps.start.outputs.instance }}')
+          echo "$out"
+          [ "$(echo "$out" | jq -r '.entries | length')" -le 2 ]
+
+      - name: Bridge stats parses + counters non-negative
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json bridge-stats '${{ steps.start.outputs.instance }}')
+          echo "$out" | tee /tmp/bridge-stats.json
+          [ "$(echo "$out" | jq -r .kind)" = "bridge_stats" ]
+          # No traffic flowed yet (no host opened the device), but the
+          # JSON shape must be there with all counters present.
+          for f in host_to_device_reports host_to_device_bytes device_to_host_reports device_to_host_bytes; do
+            v=$(echo "$out" | jq -r ".$f")
+            case "$v" in
+              ''|*[!0-9]*) echo "::error::bridge-stats.$f not a non-negative int: $v"; exit 1 ;;
+            esac
+          done
 
       - name: Stop instance
         run: |

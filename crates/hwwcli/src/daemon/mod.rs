@@ -143,6 +143,14 @@ async fn dispatch(
             Ok(list) => Response::Status { instances: list },
             Err(e) => Response::Error(e),
         },
+        Request::Logs(req) => match registry.logs(req).await {
+            Ok(entries) => Response::Logs { entries },
+            Err(e) => Response::Error(e),
+        },
+        Request::BridgeStats(req) => match registry.bridge_stats(req.instance).await {
+            Ok(snap) => Response::BridgeStats(snap),
+            Err(e) => Response::Error(e),
+        },
         Request::Shutdown => {
             registry.shutdown().await;
             shutdown.notify_waiters();
