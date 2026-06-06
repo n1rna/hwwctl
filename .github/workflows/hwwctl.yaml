@@ -210,20 +210,8 @@ jobs:
           rm -rf "$DEST"
           mkdir -p "$DEST"
           tar xzf "$TARBALL" --strip-components=1 -C "$DEST"
-          SIZE=$(du -sb "$DEST" | cut -f1)
-          BINARY=$(cd "$DEST" && find . -maxdepth 1 -type f -executable | head -1 | sed 's|^\./||')
-          cat > "$DEST/manifest.json" <<EOF
-          {
-            "wallet_type": "bitbox02",
-            "version": "ci",
-            "platform": "linux-x86_64",
-            "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "size_bytes": ${SIZE},
-            "emulator_binary": "${BINARY:-unknown}",
-            "firmware_dir": null,
-            "build_info": null
-          }
-          EOF
+          # The build script ships `manifest.json` inside the tarball;
+          # no need to write one here.
           ls -lh "$DEST"
           cat "$DEST/manifest.json"
 

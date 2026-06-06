@@ -24,10 +24,13 @@ desktop wallet app can talk to.
 ### Option A — pre-built release
 
 ```bash
-curl -fsSL https://github.com/n1rna/hwwctl/releases/download/hwwctl-v0.1.0/hwwctl-linux-x86_64.tar.gz \
+curl -fsSL https://github.com/n1rna/hwwctl/releases/download/hwwctl-v0.1.1/hwwctl-linux-x86_64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 hwwctl --version
 ```
+
+The release is built on `ubuntu-24.04`; you need glibc ≥ 2.39. On
+older hosts, build from source instead.
 
 ### Option B — from source
 
@@ -41,8 +44,26 @@ just build-release
 ## Install a wallet bundle
 
 Emulator binaries (the actual Trezor / BitBox02 / etc. simulators)
-ship as bundles under `~/.hwwctl/bundles/{wallet}/`. To build the
-BitBox02 simulator locally:
+ship as bundles under `~/.hwwctl/bundles/{wallet}/`.
+
+### Option A — download a pre-built bundle (BitBox02 only, for now)
+
+```bash
+VERSION=hwwctl-v0.1.1
+mkdir -p ~/.hwwctl/bundles/bitbox02
+curl -fsSL "https://github.com/n1rna/hwwctl/releases/download/${VERSION}/hwwctl-bitbox02-linux-x86_64.tar.gz" \
+  -o /tmp/hwwctl-bitbox02.tar.gz
+curl -fsSL "https://github.com/n1rna/hwwctl/releases/download/${VERSION}/hwwctl-bitbox02-linux-x86_64.tar.gz.sha256" \
+  -o /tmp/hwwctl-bitbox02.tar.gz.sha256
+( cd /tmp && sha256sum -c hwwctl-bitbox02.tar.gz.sha256 )
+tar -xzf /tmp/hwwctl-bitbox02.tar.gz --strip-components=1 -C ~/.hwwctl/bundles/bitbox02
+# hwwctl writes the runtime manifest.json the first time you `start bitbox02`.
+```
+
+Other wallets aren't yet attached to the release — build them
+locally via Option B.
+
+### Option B — build locally
 
 ```bash
 just bundle-test bitbox02      # builds the simulator in Docker

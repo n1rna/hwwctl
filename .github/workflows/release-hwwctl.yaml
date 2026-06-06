@@ -8,9 +8,13 @@ name: Release hwwctl
 #    `tag` input lets you cut a release from any ref without first
 #    pushing a tag — useful for prereleases.
 #
-# Output: a GitHub release with `hwwctl-linux-x86_64.tar.gz` and a
-# matching `.sha256` attached. The sigvault e2e Docker image
-# downloads these by tag.
+# Output: a GitHub release with two asset pairs attached:
+#
+#   * hwwctl-linux-x86_64.tar.gz             (+ .sha256)  — the hwwctl binary
+#   * hwwctl-bitbox02-linux-x86_64.tar.gz    (+ .sha256)  — BitBox02 simulator bundle
+#
+# Both build on `ubuntu-24.04` so their glibc minimums match the
+# expectation downstream consumers (e.g. sigvault e2e) already pin to.
 
 on:
   push:
@@ -19,9 +23,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to publish (e.g. hwwctl-v0.1.0). Created if it does not exist.'
+        description: 'Tag to publish (e.g. hwwctl-v0.1.1). Created if it does not exist.'
         required: true
-        default: 'hwwctl-v0.1.0-dev'
+        default: 'hwwctl-v0.1.1-dev'
       prerelease:
         description: 'Mark as prerelease?'
         required: false
@@ -35,17 +39,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux-x86_64:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  # ---------------------------------------------------------------------------
+  # Meta: resolve and validate the tag once so binary + bundle jobs
+  # share a single source of truth without depending on each other.
+  # Cheap (~10s) and keeps the build jobs runnable in parallel.
+  # ---------------------------------------------------------------------------
+  meta:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Resolve tag + version
-        id: meta
+        id: resolve
         run: |
           set -euo pipefail
           # Prefer the workflow_dispatch input; fall back to the
@@ -74,7 +82,20 @@ jobs:
           fi
           echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building $TAG (version $VERSION)"
+          echo "Releasing $TAG (version $VERSION)"
+
+  # ---------------------------------------------------------------------------
+  # hwwctl binary (Linux x86_64)
+  # ---------------------------------------------------------------------------
+  build-linux-x86_64:
+    needs: meta
+    # Pinned (was ubuntu-latest) so the binary's glibc minimum stays
+    # predictable. ubuntu-latest silently rolls forward and would
+    # break downstream pins.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -102,8 +123,6 @@ jobs:
           set -euxo pipefail
           mkdir -p dist
           strip target/release/hwwctl
-          # Tarball matches the bundle convention so consumers can
-          # treat both alike.
           tar -C target/release -czf dist/hwwctl-linux-x86_64.tar.gz hwwctl
           ( cd dist && sha256sum hwwctl-linux-x86_64.tar.gz > hwwctl-linux-x86_64.tar.gz.sha256 )
           ls -la dist
@@ -115,24 +134,129 @@ jobs:
           name: hwwctl-linux-x86_64
           path: dist/*
 
+  # ---------------------------------------------------------------------------
+  # BitBox02 simulator bundle (Linux x86_64). Built from
+  # BitBoxSwiss/bitbox02-firmware at the pinned ref so the binary's
+  # behavior is reproducible across releases. Cached by firmware ref
+  # + build script hash — only rebuilds when one of those changes.
+  # Cache key is shared with hwwctl.yaml smoke workflow so a green
+  # smoke run primes this job's cache (and vice versa).
+  # ---------------------------------------------------------------------------
+  build-bitbox02-bundle:
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve bitbox02-firmware ref
+        id: bb02-ref
+        # Bump this string to pick up a newer simulator. The cache
+        # key includes it, so bumping forces a rebuild on the next
+        # release.
+        run: echo "ref=firmware/v9.23.1" >> "$GITHUB_OUTPUT"
+
+      - name: Try restoring cached bundle
+        id: bundle-cache
+        uses: actions/cache@v4
+        with:
+          path: hwwctl-bitbox02-linux-x86_64.tar.gz
+          # MUST stay in sync with .github/workflows/hwwctl.yaml's
+          # `bundle-cache` step so the two workflows share a hot
+          # cache. If you change the key shape here, change it
+          # there too.
+          key: bb02-bundle-${{ steps.bb02-ref.outputs.ref }}-${{ hashFiles('scripts/build/bitbox02.sh') }}
+
+      - name: Checkout bitbox02-firmware
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: BitBoxSwiss/bitbox02-firmware
+          path: bitbox02-firmware
+          submodules: recursive
+          fetch-depth: 0
+          ref: ${{ steps.bb02-ref.outputs.ref }}
+
+      - name: Install system dependencies
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build gcc g++ protobuf-compiler \
+            libusb-1.0-0-dev libudev-dev pkg-config \
+            python3 python3-pip libcmocka-dev libhidapi-dev libprotobuf-dev \
+            libclang-dev jq
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+
+      - name: Install Rust tools for BitBox02 firmware build
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        run: |
+          BB_TOOLCHAIN=$(grep 'channel' bitbox02-firmware/src/rust/rust-toolchain.toml | cut -d'"' -f2)
+          rustup toolchain install "${BB_TOOLCHAIN}"
+          rustup component add rust-src --toolchain "${BB_TOOLCHAIN}-x86_64-unknown-linux-gnu"
+          cargo install cbindgen bindgen-cli
+          # --manifest-path (not cd) so cargo doesn't walk up to our
+          # workspace; [workspace] exclude in our root manifest
+          # covers the rest.
+          cargo build --release --manifest-path bitbox02-firmware/tools/prost-build-proto/Cargo.toml
+          cp bitbox02-firmware/tools/prost-build-proto/target/release/prost-build-proto ~/.cargo/bin/
+
+      - name: Build BitBox02 simulator bundle
+        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        env:
+          BUNDLE_VERSION: ${{ needs.meta.outputs.version }}
+        # BUNDLE_VERSION ends up in the embedded bundle-info.json
+        # (NOT the runtime manifest.json — that's written at
+        # install time by BundleManager::download). Stamp it with
+        # the release tag's version so the artifact is traceable.
+        run: FIRMWARE_DIR=bitbox02-firmware ./scripts/build/bitbox02.sh
+
+      - name: Generate SHA256 sidecar
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          cp hwwctl-bitbox02-linux-x86_64.tar.gz dist/
+          ( cd dist && sha256sum hwwctl-bitbox02-linux-x86_64.tar.gz > hwwctl-bitbox02-linux-x86_64.tar.gz.sha256 )
+          ls -la dist
+
+      - name: Upload build artifacts (workflow artifact, not release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hwwctl-bitbox02-linux-x86_64
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
+  # Publish: pull both artifact sets, attach to the same release.
+  # ---------------------------------------------------------------------------
   publish:
-    needs: build-linux-x86_64
-    runs-on: ubuntu-latest
+    needs:
+      - meta
+      - build-linux-x86_64
+      - build-bitbox02-bundle
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - name: Download hwwctl binary artifact
         uses: actions/download-artifact@v4
         with:
           name: hwwctl-linux-x86_64
           path: dist
 
+      - name: Download BitBox02 bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hwwctl-bitbox02-linux-x86_64
+          path: dist
+
       - name: Create / update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.build-linux-x86_64.outputs.tag }}
-          VERSION: ${{ needs.build-linux-x86_64.outputs.version }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VERSION: ${{ needs.meta.outputs.version }}
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euxo pipefail
@@ -149,7 +273,14 @@ jobs:
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "hwwctl $VERSION" \
-              --notes "hwwctl release \`$VERSION\` (Linux x86_64). See the workflow run for build details." \
+              --notes "hwwctl release \`$VERSION\` (Linux x86_64).
+
+Assets:
+
+- \`hwwctl-linux-x86_64.tar.gz\` — the hwwctl binary.
+- \`hwwctl-bitbox02-linux-x86_64.tar.gz\` — BitBox02 simulator bundle. Extract with \`--strip-components=1\` into \`~/.hwwctl/bundles/bitbox02/\`. The hwwctl daemon writes its \`manifest.json\` at install time, so the tarball doesn't need to ship one.
+
+Each asset has a matching \`.sha256\` sidecar." \
               "${FLAGS[@]}" \
               dist/*
           fi
