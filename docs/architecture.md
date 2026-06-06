@@ -1,4 +1,7 @@
-# Architecture
+---
+title: Architecture
+description: Workspace structure, process model, and data flow of the hwwctl daemon.
+---
 
 ## Workspace Structure
 

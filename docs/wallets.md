@@ -1,4 +1,7 @@
-# Wallet Reference
+---
+title: Wallets
+description: Per-wallet technical details — transport, build deps, known issues — for each supported hardware-wallet emulator.
+---
 
 Per-wallet technical details for each supported hardware wallet emulator.
 
