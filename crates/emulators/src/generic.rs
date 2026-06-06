@@ -60,9 +60,9 @@ const OUTPUT_RING_SIZE: usize = 500;
 /// async fn main() -> anyhow::Result<()> {
 ///     let mut emu = GenericEmulator::new(
 ///         WalletType::BitBox02,
-///         PathBuf::from("/opt/hwwtui/bundles/bitbox02/bitbox02-simulator"),
-///         PathBuf::from("/opt/hwwtui/bundles/bitbox02"),
-///         PathBuf::from("/tmp/hwwtui-bitbox02"),
+///         PathBuf::from("/opt/hwwctl/bundles/bitbox02/bitbox02-simulator"),
+///         PathBuf::from("/opt/hwwctl/bundles/bitbox02"),
+///         PathBuf::from("/tmp/hwwctl-bitbox02"),
 ///         TransportConfig::Tcp { host: "127.0.0.1".into(), port: 15423 },
 ///     );
 ///     emu.start().await?;

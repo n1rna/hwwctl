@@ -165,7 +165,7 @@ fn init_logging(log_file: Option<&Path>) -> anyhow::Result<()> {
     use tracing_subscriber::{fmt, EnvFilter};
 
     let filter = EnvFilter::try_from_env("HWWCTL_LOG_LEVEL")
-        .unwrap_or_else(|_| EnvFilter::new("info,hwwcli=debug,bridge=debug,emulators=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("info,hwwctl=debug,bridge=debug,emulators=debug"));
 
     let builder = fmt().with_env_filter(filter).with_target(true);
 

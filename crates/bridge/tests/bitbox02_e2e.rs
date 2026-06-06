@@ -21,7 +21,7 @@ use bundler::BundleManager;
 use emulators::{Emulator, EmulatorStatus, TransportConfig, WalletType};
 
 fn bundle_installed() -> bool {
-    let mgr = BundleManager::new("n1rna/hwwtui").unwrap();
+    let mgr = BundleManager::new("n1rna/hwwctl").unwrap();
     matches!(
         mgr.status(WalletType::BitBox02),
         bundler::BundleStatus::Installed { .. }
@@ -36,7 +36,7 @@ fn uhid_available() -> bool {
 }
 
 async fn start_bitbox02_emulator() -> Box<dyn Emulator> {
-    let mgr = BundleManager::new("n1rna/hwwtui").unwrap();
+    let mgr = BundleManager::new("n1rna/hwwctl").unwrap();
     let bin = mgr
         .emulator_binary_path(WalletType::BitBox02)
         .expect("BitBox02 binary not found");
@@ -47,7 +47,7 @@ async fn start_bitbox02_emulator() -> Box<dyn Emulator> {
             WalletType::BitBox02,
             bin,
             bundle_dir,
-            std::path::PathBuf::from("/tmp/hwwtui-test-bb02-e2e"),
+            std::path::PathBuf::from("/tmp/hwwctl-test-bb02-e2e"),
             TransportConfig::Tcp {
                 host: "127.0.0.1".into(),
                 port: 15423,

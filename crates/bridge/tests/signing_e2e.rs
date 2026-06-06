@@ -7,7 +7,7 @@
 //! sigvault-desktop uses.
 //!
 //! Prerequisites:
-//! - Start emulators via hwwtui (press `s` on each tab)
+//! - Start emulators via hwwctl (press `s` on each tab)
 //! - For BitBox02: press `l` to initialize
 //! - Regtest bitcoind + electrs running
 //!
@@ -160,7 +160,7 @@ async fn all_emulators_reachable() {
     if all_ok {
         eprintln!("\nPASS: All 6 emulators reachable");
     } else {
-        eprintln!("\nSome emulators not running. Start them via hwwtui.");
+        eprintln!("\nSome emulators not running. Start them via hwwctl.");
     }
 }
 

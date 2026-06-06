@@ -63,7 +63,7 @@
 - **What**: The bundler always fetches the "latest" GitHub release. There is no way to pin a specific version for a specific wallet.
 
 ### GitHub Release not yet created
-- **What**: The `build-bundles.yaml` CI workflow is configured but no release has been published yet. Pressing `d` in the TUI will fail with a GitHub API error until a release exists.
+- **What**: The `build-bundles.yaml` CI workflow is configured but no release has been published yet. `hwwctl start <wallet>` will return `BUNDLE_MISSING` until a release exists (or until `just bundle-install <wallet>` runs locally).
 
 ### Single platform only
 - **What**: Asset names include platform (`linux-x86_64`, `macos-aarch64`, etc.) and the downloader filters by `current_platform()`. However, CI currently only builds `linux-x86_64` bundles. macOS and ARM builds are not set up.
@@ -74,10 +74,10 @@
 - **What**: While the UI shows all wallet tabs, only one emulator can be meaningfully interacted with at a time (debug link polling is only done for the selected tab). Running multiple emulators simultaneously is technically possible but untested.
 
 ### Persistent emulator profiles
-- **What**: Emulator state (flash, SD card) is stored in `/tmp/hwwtui-{wallet}/` which is ephemeral. No mechanism to save/restore named profiles.
+- **What**: Emulator state (flash, SD card) is stored in `/tmp/hwwctl-{wallet}/` which is ephemeral. No mechanism to save/restore named profiles.
 
 ### Automated test scenarios
-- **What**: No scripted test flows (e.g., "start emulator → load seed → get address → verify"). All interaction is manual via keybindings.
+- **What**: No scripted test flows (e.g., "start emulator → load seed → get address → verify"). The CLI surface (`start` / `logs` / `bridge-stats`) gives tests the primitives, but no canned scenarios are provided.
 
 ### Protocol decoding
 - **What**: Only Trezor has header-level wire protocol decoding (message type + payload length). Full protobuf parsing is not implemented. Other wallets have no protocol decoding at all.

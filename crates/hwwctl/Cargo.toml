@@ -1,8 +1,8 @@
 [package]
-name = "hwwcli"
+name = "hwwctl"
 version = "0.1.0"
 edition = "2021"
-description = "CLI + daemon (hwwctl) for driving hardware-wallet emulators from tests."
+description = "CLI + daemon for driving hardware-wallet emulators from tests."
 
 [[bin]]
 name = "hwwctl"

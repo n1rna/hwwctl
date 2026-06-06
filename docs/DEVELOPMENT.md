@@ -47,14 +47,14 @@ TREZOR_FIRMWARE_PATH=/path/to/trezor-firmware/core just run
 
 # Tail logs in another terminal
 just logs
-# Logs are written to /tmp/hwwtui.log
+# Logs are written to /tmp/hwwctl.log
 ```
 
 ## Bundle System
 
 ### Downloading bundles (in-app)
 
-Press `d` on any wallet tab to download its firmware bundle from GitHub Releases. The download progress is shown in real-time. Bundles are stored in `~/.hwwtui/bundles/{wallet}/`.
+Press `d` on any wallet tab to download its firmware bundle from GitHub Releases. The download progress is shown in real-time. Bundles are stored in `~/.hwwctl/bundles/{wallet}/`.
 
 ### Testing bundle builds locally
 
@@ -88,12 +88,12 @@ just bundles
 just bundles-clean
 ```
 
-`bundle-install` extracts the tarball into `~/.hwwtui/bundles/{wallet}/` and writes a `manifest.json` so the app recognizes it.
+`bundle-install` extracts the tarball into `~/.hwwctl/bundles/{wallet}/` and writes a `manifest.json` so the app recognizes it.
 
 ### Bundle storage layout
 
 ```
-~/.hwwtui/bundles/
+~/.hwwctl/bundles/
 ├── trezor/
 │   ├── manifest.json         # Written by bundler or bundle-install
 │   ├── trezor-emu-core       # Emulator binary
@@ -162,9 +162,9 @@ wallets: "trezor,bitbox02"
 
 | Variable | Used By | Default | Description |
 |---|---|---|---|
-| `HWWTUI_GITHUB_REPO` | bundler | `n1rna/hwwtui` | GitHub repo for bundle downloads |
+| `HWWCTL_GITHUB_REPO` | bundler | `n1rna/hwwctl` | GitHub repo for bundle downloads |
 | `TREZOR_FIRMWARE_PATH` | config | (none) | Local `trezor-firmware/core/` path (bypasses bundle) |
-| `TREZOR_PROFILE_DIR` | config | `/tmp/hwwtui-trezor` | Emulator flash state directory |
+| `TREZOR_PROFILE_DIR` | config | `/tmp/hwwctl-trezor` | Emulator flash state directory |
 | `TREZOR_PORT` | config | `21324` | UDP port for Trezor emulator |
 | `BUNDLE_VERSION` | build scripts | `dev` | Version string for bundle-info.json |
 | `FIRMWARE_DIR` | build scripts | varies | Path to checked-out firmware repo |
@@ -203,7 +203,7 @@ Update `Display` impl, `wallet_dir_name()` in `crates/bundler/src/storage.rs`, a
 
 ### 2. Add device kind
 
-Add a variant to `DeviceKind` in `crates/hwwtui/src/config.rs`. Update `Display` impl and `device_kind_to_wallet_type()` in `crates/hwwtui/src/app.rs`. Add it to the `all_kinds` array in `Config::from_env_or_defaults()`.
+Add a variant to `DeviceKind` in `crates/hwwctl/src/config.rs`. Update `Display` impl and `device_kind_to_wallet_type()` in `crates/hwwctl/src/app.rs`. Add it to the `all_kinds` array in `Config::from_env_or_defaults()`.
 
 ### 3. Wire up emulator construction in app.rs
 

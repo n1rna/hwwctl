@@ -5,14 +5,14 @@
 #   BUNDLE_VERSION  – version string for bundle-info.json (default: "dev")
 #   FIRMWARE_DIR    – path to checked-out bitbox02-firmware repo (default: "bitbox02-firmware")
 #
-# Produces: hwwtui-bitbox02-linux-x86_64.tar.gz in the current directory.
+# Produces: hwwctl-bitbox02-linux-x86_64.tar.gz in the current directory.
 set -euo pipefail
 
 BUNDLE_VERSION="${BUNDLE_VERSION:-dev}"
 FIRMWARE_DIR="$(cd "${FIRMWARE_DIR:-bitbox02-firmware}" && pwd)"
 WORK_DIR="$(pwd)"
 PLATFORM="linux-x86_64"
-BUNDLE_DIR="${WORK_DIR}/hwwtui-bitbox02-${PLATFORM}"
+BUNDLE_DIR="${WORK_DIR}/hwwctl-bitbox02-${PLATFORM}"
 
 echo "==> Building BitBox02 simulator from ${FIRMWARE_DIR}"
 
@@ -51,5 +51,5 @@ cat > "${BUNDLE_DIR}/bundle-info.json" <<EOF
 }
 EOF
 
-tar czf "${WORK_DIR}/hwwtui-bitbox02-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwtui-bitbox02-${PLATFORM}"
-echo "==> Done: hwwtui-bitbox02-${PLATFORM}.tar.gz"
+tar czf "${WORK_DIR}/hwwctl-bitbox02-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwctl-bitbox02-${PLATFORM}"
+echo "==> Done: hwwctl-bitbox02-${PLATFORM}.tar.gz"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clone and build the Jade bundle locally (requires Docker on the host).
-# Produces: out/hwwtui-jade-linux-x86_64.tar.gz
+# Produces: out/hwwctl-jade-linux-x86_64.tar.gz
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,5 +17,5 @@ fi
 
 cd "${BUILD_DIR}"
 FIRMWARE_DIR="${BUILD_DIR}/jade-firmware" BUNDLE_VERSION=dev "${SCRIPT_DIR}/jade.sh"
-cp hwwtui-jade-linux-x86_64.tar.gz "${WORK_DIR}/out/"
-echo "==> Bundle at out/hwwtui-jade-linux-x86_64.tar.gz"
+cp hwwctl-jade-linux-x86_64.tar.gz "${WORK_DIR}/out/"
+echo "==> Bundle at out/hwwctl-jade-linux-x86_64.tar.gz"

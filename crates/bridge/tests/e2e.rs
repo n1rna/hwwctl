@@ -34,7 +34,7 @@ use protocol::trezor_debug::{
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const GITHUB_REPO: &str = "n1rna/hwwtui";
+const GITHUB_REPO: &str = "n1rna/hwwctl";
 const TREZOR_PORT: u16 = 21324;
 
 /// Standard BIP39 test mnemonic (12 words).
@@ -66,7 +66,7 @@ async fn start_trezor_on(port: u16, profile_suffix: &str) -> Box<dyn Emulator> {
         .emulator_binary_path(WalletType::Trezor)
         .expect("Trezor bundle not installed");
     let bundle_dir = bin.parent().unwrap().to_path_buf();
-    let profile = std::path::PathBuf::from(format!("/tmp/hwwtui-test-trezor-{profile_suffix}"));
+    let profile = std::path::PathBuf::from(format!("/tmp/hwwctl-test-trezor-{profile_suffix}"));
 
     // Wipe profile dir to ensure fresh state.
     if profile.exists() {
@@ -343,7 +343,7 @@ async fn trezor_restart_preserves_no_state_leak() {
         return;
     }
 
-    let profile = std::path::PathBuf::from("/tmp/hwwtui-test-trezor-restart");
+    let profile = std::path::PathBuf::from("/tmp/hwwctl-test-trezor-restart");
     if profile.exists() {
         std::fs::remove_dir_all(&profile).ok();
     }
@@ -431,7 +431,7 @@ async fn bitbox02_emulator_starts_and_accepts_tcp() {
             WalletType::BitBox02,
             bin,
             bundle_dir,
-            std::path::PathBuf::from("/tmp/hwwtui-test-bitbox02"),
+            std::path::PathBuf::from("/tmp/hwwctl-test-bitbox02"),
             TransportConfig::Tcp {
                 host: "127.0.0.1".into(),
                 port: 15423,
@@ -483,7 +483,7 @@ async fn bitbox02_discoverable_via_uhid_bridge() {
             WalletType::BitBox02,
             bin,
             bundle_dir,
-            std::path::PathBuf::from("/tmp/hwwtui-test-bitbox02-bridge"),
+            std::path::PathBuf::from("/tmp/hwwctl-test-bitbox02-bridge"),
             TransportConfig::Tcp {
                 host: "127.0.0.1".into(),
                 port: 15423,
@@ -579,7 +579,7 @@ fn build_coldcard_emulator(socket_path: &std::path::Path) -> Box<dyn Emulator> {
             WalletType::Coldcard,
             std::path::PathBuf::from("/bin/bash"),
             work_dir,
-            std::path::PathBuf::from("/tmp/hwwtui-test-coldcard"),
+            std::path::PathBuf::from("/tmp/hwwctl-test-coldcard"),
             TransportConfig::UnixSocket {
                 path: socket_path.to_path_buf(),
             },

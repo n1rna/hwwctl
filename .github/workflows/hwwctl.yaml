@@ -1,14 +1,13 @@
 name: hwwctl smoke
 
-# Runs on the feature branch (and any future hwwctl-* branches) and
-# can be fired manually from the Actions tab. We don't run on every
-# PR / push to main yet — the BitBox02 job builds the simulator from
-# source (~10 min) and we want to keep main's CI tight until this is
-# stable.
+# Primary integration smoke. Bundle is cached so the bitbox02-e2e
+# job is ~5 min on cache hits; only the initial run on a new
+# `firmware/vX.Y.Z` pin pays the ~10 min build cost.
 on:
   push:
     branches:
-      - 'feat/hwwctl-*'
+      - main
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -47,7 +46,7 @@ jobs:
             libusb-1.0-0-dev libudev-dev pkg-config libclang-dev jq
 
       - name: Build hwwctl (release)
-        run: cargo build --release -p hwwcli
+        run: cargo build --release -p hwwctl
 
       - name: Smoke — ping
         run: |
@@ -146,9 +145,9 @@ jobs:
         with:
           # The bundle tarball + a sentinel file so a stale cache
           # without the tarball doesn't false-hit.
-          path: hwwtui-bitbox02-linux-x86_64.tar.gz
+          path: hwwctl-bitbox02-linux-x86_64.tar.gz
           # Key includes the firmware ref + the build script hash so
-          # any change to either rebuilds. The hwwcli code itself
+          # any change to either rebuilds. The hwwctl code itself
           # does NOT invalidate the bundle — only the simulator
           # output matters.
           key: bb02-bundle-${{ steps.bb02-ref.outputs.ref }}-${{ hashFiles('scripts/build/bitbox02.sh') }}
@@ -203,11 +202,11 @@ jobs:
         run: |
           FIRMWARE_DIR=bitbox02-firmware ./scripts/build/bitbox02.sh
 
-      - name: Install bundle to ~/.hwwtui/bundles/bitbox02
+      - name: Install bundle to ~/.hwwctl/bundles/bitbox02
         run: |
           set -euo pipefail
-          TARBALL=hwwtui-bitbox02-linux-x86_64.tar.gz
-          DEST="$HOME/.hwwtui/bundles/bitbox02"
+          TARBALL=hwwctl-bitbox02-linux-x86_64.tar.gz
+          DEST="$HOME/.hwwctl/bundles/bitbox02"
           rm -rf "$DEST"
           mkdir -p "$DEST"
           tar xzf "$TARBALL" --strip-components=1 -C "$DEST"
@@ -230,7 +229,7 @@ jobs:
 
       - name: Build hwwctl + hidapi probe
         run: |
-          cargo build --release -p hwwcli
+          cargo build --release -p hwwctl
           # Compile-only — the probe runs after the daemon spawns an
           # instance. Marked `--ignored` so a stray `cargo test` won't
           # try to run it without env vars set.
@@ -410,5 +409,5 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: hwwtui-bitbox02-linux-x86_64
-          path: hwwtui-bitbox02-linux-x86_64.tar.gz
+          name: hwwctl-bitbox02-linux-x86_64
+          path: hwwctl-bitbox02-linux-x86_64.tar.gz

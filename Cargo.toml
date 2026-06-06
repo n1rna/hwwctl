@@ -1,13 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/hwwtui",
     "crates/bridge",
     "crates/emulators",
     "crates/protocol",
     "crates/bundler",
     "crates/control",
-    "crates/hwwcli",
+    "crates/hwwctl",
 ]
 # Vendored firmware repos checked out by the bundle-build CI live
 # alongside our workspace root and contain their own Cargo packages
@@ -29,10 +28,6 @@ exclude = [
 # Async runtime
 tokio = { version = "1.50", features = ["full"] }
 async-trait = "0.1.89"
-
-# TUI
-ratatui = "0.30.0"
-crossterm = "0.29.0"
 
 # UHID virtual device
 uhid-virt = "0.0.8"
@@ -66,5 +61,5 @@ tar = "0.4"
 # Directory helpers (used by bundler)
 dirs = "6"
 
-# CLI parsing (used by hwwcli)
+# CLI parsing (used by hwwctl)
 clap = { version = "4.5", features = ["derive", "env"] }

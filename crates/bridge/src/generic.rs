@@ -377,7 +377,7 @@ impl Bridge for GenericBridge {
                         // responses back (unbound sockets get abstract autobind
                         // addresses that MicroPython can't sendto).
                         let client_path =
-                            format!("/tmp/hwwtui-cc-bridge-{}.sock", std::process::id());
+                            format!("/tmp/hwwctl-cc-bridge-{}.sock", std::process::id());
                         let _ = std::fs::remove_file(&client_path);
                         let dgram = match tokio::net::UnixDatagram::bind(&client_path) {
                             Ok(s) => s,

@@ -20,7 +20,7 @@ use bundler::BundleManager;
 use emulators::{Emulator, EmulatorStatus, TransportConfig, WalletType};
 
 fn bundle_installed() -> bool {
-    let mgr = BundleManager::new("n1rna/hwwtui").unwrap();
+    let mgr = BundleManager::new("n1rna/hwwctl").unwrap();
     matches!(
         mgr.status(WalletType::Coldcard),
         bundler::BundleStatus::Installed { .. }
@@ -35,7 +35,7 @@ fn uhid_available() -> bool {
 }
 
 fn start_coldcard_emulator(socket_path: &std::path::Path) -> Box<dyn Emulator> {
-    let mgr = BundleManager::new("n1rna/hwwtui").unwrap();
+    let mgr = BundleManager::new("n1rna/hwwctl").unwrap();
     let bin = mgr
         .emulator_binary_path(WalletType::Coldcard)
         .expect("Coldcard binary not found");
@@ -62,7 +62,7 @@ fn start_coldcard_emulator(socket_path: &std::path::Path) -> Box<dyn Emulator> {
             WalletType::Coldcard,
             PathBuf::from("/bin/bash"),
             work_dir,
-            PathBuf::from("/tmp/hwwtui-test-cc-e2e"),
+            PathBuf::from("/tmp/hwwctl-test-cc-e2e"),
             TransportConfig::UnixSocket {
                 path: socket_path.to_path_buf(),
             },

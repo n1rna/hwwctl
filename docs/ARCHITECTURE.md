@@ -2,28 +2,38 @@
 
 ## Workspace Structure
 
-hwwtui is a Rust workspace with five crates:
+`hwwctl` is a Rust workspace with six crates:
 
 ```
-hwwtui/
-├── Cargo.toml                    # Workspace root
+hwwctl/
+├── Cargo.toml                    # Workspace root + workspace.exclude for vendored firmware
 ├── crates/
-│   ├── hwwtui/                   # Binary crate: TUI app, event loop, rendering
+│   ├── hwwctl/                   # Binary crate: CLI + daemon
 │   │   └── src/
-│   │       ├── main.rs           # Entry point, tracing setup, crossterm terminal
-│   │       ├── app.rs            # App state, action dispatch, emulator/bridge lifecycle
-│   │       ├── ui.rs             # Ratatui rendering (tabs, screen, controls, logs)
-│   │       └── config.rs         # Env-based configuration (Config, DeviceKind, TrezorConfig)
+│   │       ├── main.rs           # clap entry point, client vs. daemon dispatch
+│   │       ├── auto_spawn.rs     # Detached daemon spawn (setsid) when socket is missing
+│   │       ├── client.rs         # Short-lived IPC client
+│   │       ├── output.rs         # Human + JSON formatters
+│   │       └── daemon/
+│   │           ├── mod.rs        # Accept loop, request dispatch
+│   │           ├── registry.rs   # Single-task actor over HashMap<InstanceId, Instance>
+│   │           ├── instance.rs   # Per-instance state + log buffers + stats counters
+│   │           ├── spawn.rs      # Per-wallet spawn dispatch (BitBox02 wired so far)
+│   │           └── hidraw_scan.rs # /sys/class/hidraw matching by HID_UNIQ
+│   ├── control/                  # IPC protocol types (shared by client + daemon)
+│   │   └── src/lib.rs            # Request/Response/ErrorCode, length-prefixed JSON framing
 │   ├── emulators/                # Emulator process management
 │   │   └── src/
 │   │       ├── lib.rs            # Emulator trait, EmulatorStatus, WalletType, TransportConfig
 │   │       ├── trezor.rs         # TrezorEmulator: spawn micropython, UDP health check
-│   │       └── generic.rs        # GenericEmulator: covers all non-Trezor wallets (TCP/Unix)
+│   │       ├── generic.rs        # GenericEmulator: TCP/Unix-socket children (BB02, CC, etc.)
+│   │       └── wallet_config.rs  # Single source of truth: VID/PID, descriptor, ports
 │   ├── bridge/                   # UHID virtual HID device layer
 │   │   └── src/
 │   │       ├── lib.rs            # Bridge trait, HidReport, InterceptedMessage, Direction
-│   │       ├── trezor.rs         # TrezorBridge: UDP ↔ UHID bidirectional relay
-│   │       └── uhid.rs           # VirtualHidDevice: /dev/uhid wrapper (uhid-virt)
+│   │       ├── generic.rs        # GenericBridge: TCP / Unix STREAM / Unix DGRAM ↔ UHID
+│   │       ├── trezor.rs         # TrezorBridge: UDP ↔ UHID (unused in daemon, kept for parity)
+│   │       └── uhid.rs           # VirtualHidDevice: /dev/uhid wrapper with per-instance serial
 │   ├── protocol/                 # Wire protocol decoders
 │   │   └── src/
 │   │       ├── lib.rs            # DecodedMessage type
@@ -31,88 +41,141 @@ hwwtui/
 │   │       └── trezor_debug.rs   # Debug link client + wire client + screen layout parser
 │   └── bundler/                  # Firmware bundle download & storage
 │       └── src/
-│           ├── lib.rs            # BundleManager facade, BundleStatus, RemoteBundle, helpers
+│           ├── lib.rs            # BundleManager facade, BundleStatus, RemoteBundle
 │           ├── download.rs       # GithubDownloader, tarball extraction, asset name parsing
-│           ├── storage.rs        # BundleStorage: ~/.hwwtui/bundles/ layout, manifest I/O
+│           ├── storage.rs        # BundleStorage: ~/.hwwctl/bundles/ layout, manifest I/O
 │           └── manifest.rs       # BundleManifest struct (JSON serializable)
 ├── scripts/
 │   ├── build/                    # Per-wallet build scripts (trezor.sh, bitbox02.sh, etc.)
-│   └── docker/                   # Dockerfiles for isolated builds (Dockerfile.trezor, etc.)
+│   └── docker/                   # Dockerfiles for isolated builds
 └── justfile                      # Task runner recipes
 ```
 
 ## Crate Dependency Graph
 
 ```
-hwwtui (binary)
+hwwctl (binary, CLI + daemon)
+  ├── control      (IPC protocol types)
   ├── emulators    (Emulator trait, process spawning)
-  ├── bridge       (UHID bridge, needs emulators + protocol)
+  ├── bridge       (UHID bridge)
   │   ├── emulators
   │   └── protocol
   ├── protocol     (wire decoders)
-  └── bundler      (download/storage, needs emulators for WalletType)
+  └── bundler      (download/storage)
       └── emulators
 ```
 
-## Data Flow
+## Process Model
+
+Two roles share the `hwwctl` binary:
+
+- **Client** — short-lived. `hwwctl <subcommand>` opens the Unix
+  socket, sends one length-prefixed JSON `Request`, reads one
+  `Response`, exits with code 0 (success), 1 (daemon-side error), or
+  2 (transport / argument problem).
+- **Daemon** — long-lived. Owns every running emulator + UHID
+  bridge. Listens on `$HWWCTL_SOCKET` (resolved via
+  `$XDG_RUNTIME_DIR/hwwctl.sock`, fallback `/tmp/hwwctl.sock`). If
+  the client finds the socket missing, it auto-spawns a detached
+  daemon via `setsid` and polls until the socket comes up.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        hwwtui TUI                               │
-│                                                                 │
-│  Event Loop (100ms tick)                                        │
-│  ├── terminal.draw(ui::render)    → ratatui frame               │
-│  ├── app.poll_bridge_messages()   → drain InterceptedMessage    │
-│  ├── app.poll_firmware_logs()     → drain emulator stdout/err   │
-│  ├── app.poll_download_progress() → watch::Receiver<BundleStatus>│
-│  ├── app.poll_screen()            → DebugLinkGetState (UDP)     │
-│  ├── crossterm::event::poll()     → keyboard input              │
-│  └── app.process_actions()        → start/stop/download/etc     │
-└──────────┬──────────────┬─────────────┬─────────────────────────┘
-           │              │             │
-    ┌──────┴──────┐  ┌────┴────┐  ┌────┴─────┐
-    │  Emulator   │  │ Bridge  │  │ Bundler  │
-    │  Process    │  │ (UHID)  │  │          │
-    │             │  │         │  │ GitHub   │
-    │ stdout/err ─┤  │ HID ←→ │  │ Releases │
-    │ (captured)  │  │ UDP/TCP │  │ → .tar.gz│
-    └──────┬──────┘  └────┬────┘  │ → extract│
-           │              │       │ → manifest│
-    UDP/TCP/Unix      /dev/uhid   └──────────┘
-    (transport)       (virtual)
+┌──────────────────────────────────────────────────────────────┐
+│  hwwctl daemon                                                │
+│                                                               │
+│   Accept loop ─▶ handle_connection(stream)                    │
+│                       │                                        │
+│                       ▼                                        │
+│                  read_frame ─▶ dispatch(Request)               │
+│                                       │                        │
+│                                       ▼                        │
+│                                Registry (one task)             │
+│                                       │                        │
+│                                       ▼                        │
+│                                instances: HashMap              │
+│                                       │                        │
+│            ┌──────────────────────────┼──────────────────────┐ │
+│            ▼                          ▼                      ▼ │
+│  Instance(bitbox02-a3f912)  Instance(bitbox02-7c01b3)  ...     │
+│   ├── emulator (Box<dyn>)                                       │
+│   ├── bridge   (Box<dyn>)                                       │
+│   ├── emu_output  (Arc<Mutex<VecDeque<String>>>)                │
+│   ├── bridge_log  (Arc<Mutex<VecDeque<BridgeLog>>>)             │
+│   └── bridge_stats (Arc<atomic counters>)                       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Emulator stdout/stderr capture
+The registry actor serializes every state change through one tokio
+task; the `HashMap` has no lock. Per-instance log buffers and
+counters are shared `Arc`s with the background drain tasks so the
+actor can read them without contending with bridge ingest.
 
-Each emulator (TrezorEmulator or GenericEmulator) pipes stdout and stderr into a shared `Arc<Mutex<VecDeque<String>>>` ring buffer (500 lines max). Tokio tasks read lines asynchronously via `BufReader::lines()`. The event loop calls `drain_output()` every tick to move lines into the per-pane `firmware_log` deque (200 entries max, ANSI-stripped).
+## Data Flow per Instance
 
-### Debug link screen reading (Trezor only)
-
-`TrezorDebugLink` sends `DebugLinkGetState` (msg type 101) over UDP port 21325 every ~500ms (throttled to every 5 ticks). The response `DebugLinkState` (msg type 102) contains field 13 (`tokens`), a repeated string that concatenates into a JSON layout description. `parse_layout_tokens()` extracts title, paragraphs, buttons into a `ParsedLayout` for rendering in the Screen panel.
-
-### Wire protocol commands (Trezor only)
-
-`TrezorWireClient` connects on-demand to the main UDP port (21324) for commands like `Initialize` and `LoadDevice`. Connections are ephemeral (created, used, dropped) so they don't interfere with external apps (e.g. sigvault-desktop) that also connect to the emulator.
-
-`LoadDevice` triggers `ButtonRequest` confirmations -- the wire client handles these automatically by sending `ButtonAck` and pressing YES via the debug link.
+```
+            ┌────────────────────────────────────────────┐
+            │             hwwctl daemon                  │
+            │                                            │
+            │   spawn::start_bitbox02:                   │
+            │     1. resolve bundle binary               │
+            │     2. allocate free TCP port + HID serial │
+            │     3. GenericEmulator.start (skip probe)  │
+            │     4. GenericBridge.start (UHID create)   │
+            │     5. wait for /dev/hidrawN by HID_UNIQ   │
+            │     6. spawn drain task → log + counters   │
+            │     7. insert into Registry                │
+            └─────┬──────────────────────┬───────────────┘
+                  │                      │
+        ┌─────────┴──────────┐   ┌───────┴──────────┐
+        │  Emulator process  │   │  UHID device     │
+        │  (bitbox02-sim)    │   │  /dev/uhid       │
+        │                    │   │       │          │
+        │  TCP listen :N     │   │       ▼          │
+        │       │            │   │  /dev/hidrawN    │
+        └───────┼────────────┘   └───────┼──────────┘
+                │ TCP                    │ HID reports
+                └──────── bridge ────────┘
+```
 
 ## Key Types
 
-### `App` (`crates/hwwtui/src/app.rs`)
+### `Request` / `Response` (`crates/control/src/lib.rs`)
 
-Top-level application state. Owns a `Vec<DevicePane>` (one per wallet type), the selected tab index, a pending action queue, and a shared `BundleManager`. All mutation goes through `dispatch(Action)` → `process_actions()`.
+Internally-tagged serde enums. Variants: `Ping`, `Start`, `Stop`,
+`Status`, `Logs`, `BridgeStats`, `Shutdown`. Length-prefixed JSON
+framing — 4-byte big-endian length then payload, max 16 MiB. Stable
+`ErrorCode` values (SCREAMING_SNAKE) — `BUNDLE_MISSING`,
+`BRIDGE_FAILED`, `INSTANCE_NOT_FOUND`, `WALLET_UNSUPPORTED`, … —
+so callers pattern-match on `code` not message text.
 
-### `DevicePane` (`crates/hwwtui/src/app.rs`)
+### `Registry` (`crates/hwwctl/src/daemon/registry.rs`)
 
-Per-device state including:
-- `emulator: Option<Box<dyn Emulator>>` -- the process manager
-- `bridge: Option<Box<dyn Bridge>>` -- UHID bridge (currently unused)
-- `debug_link: Option<TrezorDebugLink>` -- screen/button access
-- `wire_port: Option<u16>` -- for on-demand wire commands
-- `method_log`, `raw_log`, `firmware_log` -- capped VecDeques for TUI display
-- `screen_title`, `screen_content`, `screen_buttons` -- parsed debug link output
-- `bundle_status: BundleStatus` -- installation state
-- `download_progress_rx: Option<watch::Receiver<BundleStatus>>` -- live download progress
+Owns `HashMap<InstanceId, Instance>`. Accepts `Command`s via
+`mpsc::Sender`, replies via `oneshot::Sender`. The accept loop sends
+each incoming `Request` as a `Command` and awaits the reply before
+writing the IPC `Response`. Shutdown drops every instance with a
+`stop_instance` call.
+
+### `Instance` (`crates/hwwctl/src/daemon/instance.rs`)
+
+```rust
+pub(crate) struct Instance {
+    pub id: InstanceId,
+    pub wallet: Wallet,
+    pub state: InstanceState,
+    pub vid: u16, pub pid: u16,
+    pub serial: String,           // HID_UNIQ, unique per instance
+    pub hidraw: Option<PathBuf>,  // best-effort path from /sys/class/hidraw
+    pub transport: String,        // human-readable, e.g. "tcp 127.0.0.1:43219"
+    pub emulator: Box<dyn Emulator>,
+    pub bridge: Option<Box<dyn Bridge>>,
+    pub log_drain: Option<JoinHandle<()>>,
+    pub started_at: Instant,
+    pub emu_output: Arc<Mutex<VecDeque<String>>>,    // shared with emulator's stdio readers
+    pub bridge_log: Arc<Mutex<VecDeque<BridgeLog>>>, // filled by log_drain
+    pub bridge_stats: Arc<BridgeStatsCounters>,      // atomics
+}
+```
 
 ### `Emulator` trait (`crates/emulators/src/lib.rs`)
 
@@ -129,9 +192,16 @@ pub trait Emulator: Send + Sync {
 }
 ```
 
-Two implementations:
-- **`TrezorEmulator`**: Spawns `trezor-emu-core` binary, sets `TREZOR_PROFILE_DIR`, `SDL_VIDEODRIVER=dummy`, `TREZOR_UDP_PORT`. Health check via UDP probe (zero-byte send + recv timeout).
-- **`GenericEmulator`**: Spawns any binary with configurable args/env. Health check via TCP connect or Unix socket connect. Used for BitBox02, Coldcard, Specter, Ledger, Jade.
+Implementations:
+- **`TrezorEmulator`** — spawns `trezor-emu-core`, UDP probe.
+- **`GenericEmulator`** — TCP/Unix children. Supports
+  `with_skip_probe_delay(d)` for single-client simulators
+  (BitBox02) where any readiness probe causes SIGPIPE.
+
+`GenericEmulator::output_buffer()` returns an `Arc<Mutex<VecDeque<String>>>`
+shared with the spawned stdio reader tasks. The daemon's `Instance`
+holds a clone and can slice it for `Logs` queries without owning the
+emulator exclusively.
 
 ### `Bridge` trait (`crates/bridge/src/lib.rs`)
 
@@ -144,11 +214,16 @@ pub trait Bridge: Send + Sync {
 }
 ```
 
-One implementation: `TrezorBridge` (currently disabled in `app.rs`). Relays UDP datagrams to/from a UHID virtual HID device on a dedicated blocking thread.
+`GenericBridge` covers all UHID-backed wallets. Built with
+`GenericBridgeConfig::new(...).with_serial(s)` so each instance pins a
+distinct HID `uniq` value — desktop apps using `hidapi` then
+disambiguate by `serial_number`.
 
 ### `BundleManager` (`crates/bundler/src/lib.rs`)
 
-Facade combining `BundleStorage` (local disk at `~/.hwwtui/bundles/`) with `GithubDownloader` (GitHub Releases API). Downloads stream progress via `tokio::sync::watch` channel. After extraction, writes a `manifest.json` with the binary path, version, size, and platform.
+Facade over `BundleStorage` (`~/.hwwctl/bundles/`) and
+`GithubDownloader` (GitHub Releases API). Resolves the emulator
+binary path the daemon needs to spawn.
 
 ### `TransportConfig` (`crates/emulators/src/lib.rs`)
 
@@ -156,53 +231,60 @@ Facade combining `BundleStorage` (local disk at `~/.hwwtui/bundles/`) with `Gith
 pub enum TransportConfig {
     Udp { host: String, port: u16 },   // Trezor
     Tcp { host: String, port: u16 },   // BitBox02, Specter, Ledger, Jade
-    UnixSocket { path: PathBuf },       // Coldcard
+    UnixSocket { path: PathBuf },       // Coldcard (DGRAM probe)
 }
 ```
 
-## How Emulators Are Started
+## How a BitBox02 Start Works
 
-1. User presses `s` on a wallet tab
-2. `app.start_selected()` checks if `pane.emulator` is already set
-3. If not, looks up the installed bundle via `bundle_manager.emulator_binary_path(wallet_type)`
-4. Constructs the appropriate emulator type:
-   - Trezor → `TrezorEmulator::new_with_binary(bin_path, bundle_dir, profile_dir, port)`
-   - Others → `GenericEmulator::new(wallet_type, bin_path, working_dir, profile_dir, transport).with_arg(...).with_env(...)`
-5. Calls `emu.start()` which:
-   - Spawns the child process with `tokio::process::Command`
-   - Sets `LD_LIBRARY_PATH` if `lib/` dir exists (bundled shared libs)
-   - Spawns async tasks to capture stdout/stderr
-   - Polls for transport readiness (UDP probe or TCP connect) with timeout
-   - Sets status to `Running` or `Error`
-6. For Trezor, also connects `TrezorDebugLink` on port+1
+1. Client sends `Request::Start { wallet: BitBox02, wait_ready: true, timeout_secs: None }`.
+2. Registry actor calls `spawn::start_bitbox02`:
+   - Resolves the simulator binary via `BundleManager::emulator_binary_path`. Missing → `BUNDLE_MISSING`.
+   - Picks an unused TCP port (bind ephemeral, drop).
+   - Generates `InstanceId = "bitbox02-<6 hex>"` and `serial = "hwwctl-bb02-<6 hex>"`.
+   - Builds `GenericEmulator` with `--port <N>` and `with_skip_probe_delay(1500ms)`. `start()` spawns the child, sleeps, marks `Running` (no TCP probe — the simulator is single-client).
+   - Builds `GenericBridge` with the unique `serial` and starts it. Creates `/dev/uhid` device → kernel exposes as `/dev/hidrawN`.
+   - Spawns a drain task that consumes the bridge's `InterceptedMessage` channel into `bridge_log` (ring, capped at 500) and increments `bridge_stats` atomic counters.
+   - If `wait_ready`, polls `/sys/class/hidraw/*/device/uevent` for a `HID_UNIQ=<serial>` match (up to 3 s).
+   - Inserts the `Instance` into the registry.
+3. Registry replies `Response::Started(InstanceSummary)` with vid/pid/serial/hidraw/transport.
+
+`Stop` is symmetric and idempotent: unknown id → ok. `Shutdown`
+iterates all instances and calls `stop_instance` on each.
 
 ## Bundle System
 
 ```
-~/.hwwtui/bundles/
+~/.hwwctl/bundles/
 ├── trezor/
-│   ├── manifest.json         # BundleManifest (wallet_type, version, emulator_binary, etc.)
-│   ├── trezor-emu-core       # Main binary
-│   ├── lib/                  # Bundled shared libraries
-│   ├── src/                  # Python modules loaded at runtime
-│   └── run.sh                # Wrapper script (sets LD_LIBRARY_PATH)
+│   ├── manifest.json         # wallet_type, version, emulator_binary, ...
+│   ├── trezor-emu-core
+│   ├── lib/                  # bundled shared libraries
+│   ├── src/
+│   └── run.sh                # wrapper script (sets LD_LIBRARY_PATH)
 ├── bitbox02/
 │   ├── manifest.json
 │   └── bitbox02-simulator
 └── ...
 ```
 
-GitHub Releases assets follow the naming convention `hwwtui-{wallet}-{platform}.tar.gz`. The `GithubDownloader` fetches the latest release, parses asset names, and streams downloads with progress. Tarballs are extracted with top-level directory stripping.
+GitHub Releases assets follow the convention
+`hwwctl-{wallet}-{platform}.tar.gz`.
 
 ## UHID Bridge Architecture
 
-The UHID bridge creates a virtual USB HID device via `/dev/uhid` that appears as `/dev/hidraw*` to host applications. A dedicated blocking thread owns the `UHIDDevice` and handles both directions:
+The bridge creates a virtual USB HID device via `/dev/uhid` that
+appears as `/dev/hidrawN` to host applications. A dedicated blocking
+thread owns the `UHIDDevice` and handles both directions:
 
-- **Emulator → Host**: UDP recv → channel → UHID input report write
-- **Host → Emulator**: UHID output report poll → channel → UDP send
+- **Emulator → Host**: TCP / Unix recv → channel → UHID input report write
+- **Host → Emulator**: UHID output report poll → channel → TCP / Unix send
 
-Currently **disabled for Trezor** because `trezor-client` uses `rusb` (WebUSB) to enumerate USB devices and would incorrectly detect the UHID virtual device as a real Trezor, then fail to communicate. The Trezor emulator is instead accessed directly via UDP.
+The UHID `CREATE2` ioctl is synchronous, but the kernel still walks
+through the HID subsystem to create `hidraw` asynchronously. `spawn`
+polls `/sys/class/hidraw` for the matching `HID_UNIQ` and returns
+the discovered `/dev/hidrawN` path in `InstanceSummary::hidraw`.
 
-Not yet implemented for other wallets (BitBox02, Specter, Ledger need it for desktop app integration since they use `hidapi`-based USB discovery).
+Linux only. UHID has no macOS / Windows equivalent.
 
-Requires `/dev/uhid` access: `sudo setfacl -m u:$USER:rw /dev/uhid` or a udev rule.
+Requires `/dev/uhid` access — `just setup-udev` installs the rules.

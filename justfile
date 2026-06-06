@@ -1,4 +1,4 @@
-# hwwtui — hardware wallet emulator TUI
+# hwwctl — hardware wallet emulator control plane
 
 default:
     @just --list
@@ -11,13 +11,14 @@ build:
 build-release:
     cargo build --release
 
-# Run the TUI (debug build)
-run *ARGS:
-    cargo run -p hwwtui -- {{ARGS}}
+# Run the daemon in the foreground (release build). Useful for
+# debugging; normal callers auto-spawn the daemon on first command.
+daemon *ARGS:
+    cargo run --release -p hwwctl -- daemon {{ARGS}}
 
-# Run the TUI (release build)
-run-release *ARGS:
-    cargo run --release -p hwwtui -- {{ARGS}}
+# Run an hwwctl subcommand against the daemon (auto-spawns).
+ctl *ARGS:
+    cargo run --release -p hwwctl -- {{ARGS}}
 
 # Run all tests
 test:
@@ -47,7 +48,7 @@ setup-udev:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Installing udev rules..."
-    sudo cp udev/99-hwwtui.rules /etc/udev/rules.d/
+    sudo cp udev/99-hwwctl.rules /etc/udev/rules.d/
     sudo udevadm control --reload-rules
     sudo udevadm trigger
     # /dev/uhid already exists, udev trigger won't re-apply rules to it.
@@ -64,9 +65,9 @@ setup-udev:
     echo ""
     echo "Done. /dev/uhid and hardware wallet HID devices are now accessible."
 
-# Tail the log file (run in a separate terminal)
+# Tail the daemon log
 logs:
-    tail -f /tmp/hwwtui.log
+    tail -f /tmp/hwwctl.log
 
 # Clean build artifacts
 clean:
@@ -74,12 +75,12 @@ clean:
 
 # Show bundle storage location and contents
 bundles:
-    @echo "Bundle storage: ~/.hwwtui/bundles/"
-    @ls -la ~/.hwwtui/bundles/ 2>/dev/null || echo "(no bundles downloaded yet)"
+    @echo "Bundle storage: ~/.hwwctl/bundles/"
+    @ls -la ~/.hwwctl/bundles/ 2>/dev/null || echo "(no bundles downloaded yet)"
 
 # Remove all downloaded bundles
 bundles-clean:
-    rm -rf ~/.hwwtui/bundles/
+    rm -rf ~/.hwwctl/bundles/
     @echo "All bundles removed"
 
 # Test a bundle build in Docker (e.g., just bundle-test trezor)
@@ -94,28 +95,28 @@ bundle-test wallet:
         ./scripts/build/{{wallet}}-local.sh
     else
         echo "==> Building {{wallet}} in Docker container..."
-        docker build -f scripts/docker/Dockerfile.{{wallet}} -t hwwtui-test-{{wallet}} .
-        docker run --rm -v "$(pwd)/out:/out" hwwtui-test-{{wallet}} \
-            bash -c './scripts/build/{{wallet}}.sh && cp hwwtui-{{wallet}}-*.tar.gz /out/'
+        docker build -f scripts/docker/Dockerfile.{{wallet}} -t hwwctl-test-{{wallet}} .
+        docker run --rm -v "$(pwd)/out:/out" hwwctl-test-{{wallet}} \
+            bash -c './scripts/build/{{wallet}}.sh && cp hwwctl-{{wallet}}-*.tar.gz /out/'
     fi
     echo "Output in out/"
-    ls -lh out/hwwtui-{{wallet}}-*.tar.gz 2>/dev/null
+    ls -lh out/hwwctl-{{wallet}}-*.tar.gz 2>/dev/null
 
-# Install a locally-built bundle into ~/.hwwtui/bundles/ for testing
+# Install a locally-built bundle into ~/.hwwctl/bundles/ for testing
 bundle-install wallet:
     #!/usr/bin/env bash
     set -euo pipefail
-    TARBALL="out/hwwtui-{{wallet}}-linux-x86_64.tar.gz"
+    TARBALL="out/hwwctl-{{wallet}}-linux-x86_64.tar.gz"
     if [ ! -f "${TARBALL}" ]; then
         echo "Bundle not found: ${TARBALL}"
         echo "Run 'just bundle-test {{wallet}}' first."
         exit 1
     fi
-    DEST="$HOME/.hwwtui/bundles/{{wallet}}"
+    DEST="$HOME/.hwwctl/bundles/{{wallet}}"
     rm -rf "${DEST}"
     mkdir -p "${DEST}"
     tar xzf "${TARBALL}" --strip-components=1 -C "${DEST}"
-    # Write a manifest.json so hwwtui recognizes it
+    # Write a manifest.json so hwwctl recognizes it
     SIZE=$(du -sb "${DEST}" | cut -f1)
     BINARY=$(cd "${DEST}" && find . -maxdepth 1 -type f -executable | head -1 | sed 's|^\./||')
     cat > "${DEST}/manifest.json" <<EOF

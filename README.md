@@ -1,140 +1,146 @@
-# hwwtui
+# hwwctl
 
-[![CI](https://github.com/n1rna/hwwtui/actions/workflows/ci.yaml/badge.svg)](https://github.com/n1rna/hwwtui/actions/workflows/ci.yaml)
+[![CI](https://github.com/n1rna/hwwctl/actions/workflows/ci.yaml/badge.svg)](https://github.com/n1rna/hwwctl/actions/workflows/ci.yaml)
 [![Rust](https://1tt.dev/badge/rust-1.80+-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![Wallets](https://1tt.dev/badge/wallets-6-blue.svg?style=flat)](https://github.com/n1rna/hwwtui#supported-wallets)
-[![License](https://1tt.dev/badge/license-MIT-green.svg)](https://github.com/n1rna/hwwtui/blob/main/LICENSE)
-[![Linux](https://1tt.dev/badge/platform-linux-lightgrey.svg?logo=linux&logoColor=white)](https://github.com/n1rna/hwwtui)
+[![Wallets](https://1tt.dev/badge/wallets-6-blue.svg?style=flat)](https://github.com/n1rna/hwwctl#supported-wallets)
+[![License](https://1tt.dev/badge/license-MIT-green.svg)](https://github.com/n1rna/hwwctl/blob/main/LICENSE)
+[![Linux](https://1tt.dev/badge/platform-linux-lightgrey.svg?logo=linux&logoColor=white)](https://github.com/n1rna/hwwctl)
 
-A terminal UI lab for running, controlling, and inspecting hardware wallet emulators. Manages emulator processes for six wallet types (Trezor, BitBox02, Coldcard, Specter DIY, Ledger, Jade), captures their output, and bridges them to desktop wallet applications via UHID virtual HID devices.
+A control plane for hardware-wallet emulators, designed for end-to-end
+testing of desktop wallet applications. Spawns six wallet emulators
+(Trezor, BitBox02, Coldcard, Specter DIY, Ledger, Jade), exposes each
+as a real `/dev/hidraw*` device through Linux UHID, and gives tests a
+stable JSON CLI to drive them.
 
-## Quick Start
+The CLI auto-spawns a long-lived **daemon** that owns every running
+emulator and its UHID bridge. Tests speak to it through `hwwctl` —
+short-lived invocations against a Unix socket.
+
+```
+test code  ──▶  hwwctl <cmd>  ──Unix socket──▶  hwwctl daemon
+                                                    │
+                                                    ├── BitBox02 simulator (TCP) ──▶ UHID ──▶ /dev/hidrawN
+                                                    ├── Coldcard simulator (DGRAM) ─▶ UHID ──▶ /dev/hidrawN
+                                                    └── Trezor / Ledger / Jade / Specter (direct TCP/UDP)
+```
+
+Desktop apps discover the emulators through `hidapi` exactly as they
+would discover real plugged-in hardware.
+
+## Quick start
 
 ```bash
-# Install udev rules (one-time, for UHID bridge)
+# One-time host setup (loads uhid + sets perms)
+sudo modprobe uhid
 just setup-udev
 
 # Build
-just build
+just build-release
 
-# Run (downloads bundles on first use via [d] key)
-just run
+# Auto-spawning daemon — first call starts it
+./target/release/hwwctl ping
+./target/release/hwwctl start bitbox02
+# → {"kind":"started", "serial":"hwwctl-bb02-…", "hidraw":"/dev/hidrawN", ...}
 
-# Tail logs in another terminal
-just logs
+# When done
+./target/release/hwwctl shutdown
 ```
 
-### Per-wallet workflows
+## Commands
 
-**Trezor** (UDP, no bridge needed):
-1. Press `d` to download bundle, `s` to start
-2. Press `l` to load test seed
-3. Desktop apps connect via UDP :21324
+| Command | Use |
+|---|---|
+| `hwwctl daemon` | Run the daemon explicitly (otherwise auto-spawned). |
+| `hwwctl ping` | Liveness check; returns daemon + protocol versions. |
+| `hwwctl start <wallet> [--no-wait] [--timeout N]` | Spawn an emulator instance. Returns serial + hidraw path + VID/PID. |
+| `hwwctl stop <id>` | Idempotent teardown. |
+| `hwwctl status [id]` | Snapshot of all instances (or one). |
+| `hwwctl logs <id> [--tail N] [--source emulator\|bridge\|all]` | Unified timeline of emulator stdout and bridge HID traffic. |
+| `hwwctl bridge-stats <id>` | Packet + byte counters per direction. |
+| `hwwctl shutdown` | Drop all instances and exit the daemon. |
 
-**BitBox02** (TCP + UHID bridge):
-1. Press `d` to download, `s` to start (UHID bridge auto-starts)
-2. Press `l` to initialize with test mnemonic
-3. Desktop apps discover via hidapi (VID=0x03EB PID=0x2403)
+`--json` on any command emits machine-readable output for test
+harnesses. Errors carry stable codes — `BUNDLE_MISSING`,
+`BRIDGE_FAILED`, `INSTANCE_NOT_FOUND`, … — so tests pattern-match on
+`code` rather than parsing English.
 
-**Coldcard** (DGRAM Unix socket + UHID bridge):
-1. Press `d` to download, `s` to start (UHID bridge auto-starts)
-2. Simulator starts pre-seeded — no initialization needed
-3. Desktop apps discover via hidapi (VID=0xD13E PID=0xCC10)
+### Supported wallets
 
-**Ledger** (Docker/Speculos, direct TCP):
-1. Press `d` to download, `s` to start (runs Speculos in Docker)
-2. Starts pre-seeded with test mnemonic — no initialization needed
-3. Desktop apps connect directly via TCP :9999
+Phase 2a currently has BitBox02 wired into the daemon. The other five
+return `WALLET_UNSUPPORTED` until wired in subsequent phases.
 
-**Specter DIY** (MicroPython, direct TCP):
-1. Press `d` to download, `s` to start
-2. Auto-initializes with test mnemonic on startup
-3. Desktop apps connect directly via TCP :8789
-
-**Jade** (Docker/QEMU, direct TCP):
-1. Press `d` to download, `s` to start (runs QEMU ESP32 in Docker)
-2. Starts uninitialized — needs PIN setup via desktop app
-3. Desktop apps connect directly via TCP :30121
+| Wallet | Transport | Bridge | Discovery |
+|--------|-----------|--------|-----------|
+| **BitBox02** | TCP | UHID (VID 0x03EB / PID 0x2403) | hidapi |
+| **Coldcard** | Unix DGRAM | UHID (VID 0xD13E / PID 0xCC10) | hidapi |
+| **Trezor** | UDP | direct (no bridge) | trezor-client / UDP |
+| **Specter DIY** | TCP | direct (no bridge) | TCP |
+| **Ledger** | TCP (Docker/Speculos) | direct (no bridge) | TCP |
+| **Jade** | TCP (Docker/QEMU) | direct (no bridge) | TCP |
 
 ### Environment variables
 
-| Variable | Default | Description |
+| Variable | Default | Purpose |
 |---|---|---|
-| `HWWTUI_GITHUB_REPO` | `n1rna/hwwtui` | GitHub repo for bundle downloads |
-| `TREZOR_FIRMWARE_PATH` | (none) | Path to local `trezor-firmware/core/` checkout (bypasses bundle) |
-| `TREZOR_PROFILE_DIR` | `/tmp/hwwtui-trezor` | Emulator flash/SD state directory |
-| `TREZOR_PORT` | `21324` | UDP port for the Trezor emulator |
+| `HWWCTL_SOCKET` | `$XDG_RUNTIME_DIR/hwwctl.sock` (fallback `/tmp/hwwctl.sock`) | Daemon socket path. Per-test override for parallel workers. |
+| `HWWCTL_LOG` | `/tmp/hwwctl.log` | Daemon log file (when running via auto-spawn). |
+| `HWWCTL_LOG_LEVEL` | `info,hwwctl=debug,bridge=debug,emulators=debug` | `tracing` env-filter for the daemon. |
+| `HWWCTL_GITHUB_REPO` | `n1rna/hwwctl` | Repo for bundle downloads. |
+| `TREZOR_FIRMWARE_PATH` | (none) | Path to a local `trezor-firmware/core/` checkout (bypasses bundle). |
 
-## Keybindings
+## UHID bridge
 
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Cycle device tabs |
-| `1` `2` `3` | Switch left panel tab (Controls / Screen / Keys) |
-| `5` `6` `7` `8` | Switch right panel tab (Methods / Firmware / Raw / Bridge) |
-| `s` | Start selected emulator |
-| `x` | Stop selected emulator |
-| `r` | Reset (stop + start) |
-| `d` | Download firmware bundle for selected device |
-| `D` (Shift+D) | Remove installed bundle |
-| `i` | Send Initialize command (Trezor) |
-| `l` | Load test seed / initialize (Trezor, BitBox02) |
-| `Enter` | Confirm / press YES via debug link (Trezor) |
-| `Esc` | Cancel / press NO via debug link (Trezor) |
-| `↑↓←→` | Swipe gesture via debug link (Trezor) |
-| `q` / `Ctrl-C` | Quit (stops all emulators) |
-
-Mouse: click on device tabs or panel tabs to switch.
-
-## Supported Wallets
-
-| Wallet | Transport | Bridge | Discovery | Desktop App |
-|--------|-----------|--------|-----------|-------------|
-| **Trezor** | UDP :21324 | None (direct UDP) | trezor-client | Working |
-| **BitBox02** | TCP :15423 | UHID (VID 03EB) | hidapi | Working |
-| **Coldcard** | Unix DGRAM | UHID (VID D13E) | hidapi | Working |
-| **Specter DIY** | TCP :8789 | None (direct TCP) | TCP connect | Working |
-| **Ledger** | TCP :9999 (Docker) | None (direct TCP) | TCP connect | Working |
-| **Jade** | TCP :30121 (Docker) | None (direct TCP) | TCP connect | Working |
-
-## UHID Bridge
-
-For wallets that use HID communication (BitBox02, Coldcard), hwwtui creates virtual USB HID devices via Linux UHID (`/dev/uhid`). Desktop wallet applications discover these devices through `hidapi` exactly as they would discover real hardware.
+For wallets that speak USB HID natively (BitBox02, Coldcard), `hwwctl`
+creates a virtual HID device via `/dev/uhid`. The kernel exposes it
+as `/dev/hidrawN`, and `hidapi`'s `device_list()` returns it with the
+configured VID/PID and a per-instance `serial_number`. Two BitBox02s
+can run concurrently because each gets a unique serial.
 
 ```
-Desktop App (hidapi) ↔ /dev/hidraw (kernel) ↔ /dev/uhid (UHID) ↔ GenericBridge ↔ Emulator
+hidapi enumerate ─▶ /dev/hidrawN ─▶ (kernel HID) ─▶ /dev/uhid ─▶ GenericBridge ─▶ emulator
 ```
+
+Linux only; UHID has no macOS / Windows equivalent. The CLI and
+protocol crates compile on macOS for development convenience, but
+the daemon refuses to start a UHID-backed wallet there.
 
 ### Permissions
 
-Run `just setup-udev` to install udev rules for `/dev/uhid` and hidraw devices. This is a one-time setup that:
-- Grants access to `/dev/uhid` for virtual device creation
-- Sets permissions on hidraw devices for BitBox02, Coldcard, Ledger, and Trezor VID/PIDs
-- Works with both real hardware and UHID virtual devices
+Run `just setup-udev` once to install the udev rules at
+`udev/99-hwwctl.rules`. This grants access to `/dev/uhid` and to the
+hidraw nodes for the wallet VID/PIDs.
 
-## Building Bundles
+## Bundles
 
-Each wallet's emulator is packaged as a downloadable bundle. To build locally:
+Each wallet's emulator is packaged as a downloadable bundle of binary
++ runtime data under `~/.hwwctl/bundles/{wallet}/`. The `hwwctl`
+daemon resolves binaries through this layout.
+
+Build a bundle locally:
 
 ```bash
-# Build in Docker (recommended)
-just bundle-test trezor
-just bundle-test bitbox02
-just bundle-test coldcard
-
-# Install locally
-just bundle-install trezor
-
-# Ledger/Jade build on host (they use Docker internally)
-./scripts/build/ledger-local.sh
-./scripts/build/jade-local.sh
+just bundle-test bitbox02     # builds the simulator in Docker
+just bundle-install bitbox02  # extracts into ~/.hwwctl/bundles/bitbox02
 ```
+
+Ledger and Jade build on the host since their bundles wrap Docker
+runtimes (Speculos / QEMU).
+
+## Releases
+
+Linux x86_64 binaries are published as
+[GitHub release assets](https://github.com/n1rna/hwwctl/releases).
+Each release attaches `hwwctl-linux-x86_64.tar.gz` and a `.sha256`
+sidecar; the version string in `--version` matches the release tag.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — workspace structure, data flow, key types
-- [Wallet Reference](docs/WALLETS.md) — per-wallet details, transport, build deps, known issues
-- [Development Guide](docs/DEVELOPMENT.md) — building, testing, CI, adding new wallets
+- [Architecture](docs/ARCHITECTURE.md) — workspace structure, data
+  flow, key types
+- [Wallet Reference](docs/WALLETS.md) — per-wallet details, transport,
+  build deps, known issues
+- [Development Guide](docs/DEVELOPMENT.md) — building, testing, CI,
+  adding new wallets
 
 ## License
 

@@ -9,7 +9,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let manager = BundleManager::new("myorg/hwwtui")?;
+//!     let manager = BundleManager::new("myorg/hwwctl")?;
 //!
 //!     // List bundles available on GitHub for the current platform.
 //!     let remote = manager.list_remote().await?;
@@ -83,7 +83,7 @@ pub struct RemoteBundle {
     pub download_url: String,
     /// Compressed asset size in bytes as reported by GitHub.
     pub size_bytes: u64,
-    /// Original asset filename, e.g. `"hwwtui-trezor-linux-x86_64.tar.gz"`.
+    /// Original asset filename, e.g. `"hwwctl-trezor-linux-x86_64.tar.gz"`.
     pub asset_name: String,
 }
 
@@ -102,7 +102,7 @@ pub struct BundleManager {
 impl BundleManager {
     /// Create a new `BundleManager` targeting the given GitHub repository.
     ///
-    /// `github_repo` should be `"owner/repo"`, e.g. `"myorg/hwwtui"`.
+    /// `github_repo` should be `"owner/repo"`, e.g. `"myorg/hwwctl"`.
     ///
     /// This call is synchronous and only initialises the local storage
     /// directory.  No network requests are made.

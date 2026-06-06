@@ -98,8 +98,9 @@ async fn start_bitbox02(
         .ok_or_else(|| {
             CtlError::new(
                 ErrorCode::BundleMissing,
-                "BitBox02 simulator bundle is not installed. Run `just bundle-install bitbox02` \
-                 or download it via the TUI.",
+                "BitBox02 simulator bundle is not installed. Run \
+                 `just bundle-install bitbox02` (or pull a release from \
+                 https://github.com/n1rna/hwwctl/releases).",
             )
         })?;
     if !bin_path.exists() {
@@ -325,7 +326,7 @@ async fn start_bitbox02(
 
 #[cfg(target_os = "linux")]
 fn bundle_manager() -> Result<BundleManager, CtlError> {
-    let repo = std::env::var("HWWTUI_GITHUB_REPO").unwrap_or_else(|_| "n1rna/hwwtui".to_string());
+    let repo = std::env::var("HWWCTL_GITHUB_REPO").unwrap_or_else(|_| "n1rna/hwwctl".to_string());
     BundleManager::new(&repo).map_err(|e| super::internal_err(e))
 }
 

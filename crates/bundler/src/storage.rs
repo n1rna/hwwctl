@@ -1,6 +1,6 @@
 //! Local filesystem storage for downloaded bundles.
 //!
-//! All bundles live under `~/.hwwtui/bundles/{wallet}/`.  Each wallet
+//! All bundles live under `~/.hwwctl/bundles/{wallet}/`.  Each wallet
 //! directory contains a `manifest.json` and the extracted bundle contents.
 
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use crate::manifest::BundleManifest;
 /// # Layout
 ///
 /// ```text
-/// ~/.hwwtui/
+/// ~/.hwwctl/
 /// └── bundles/
 ///     ├── trezor/
 ///     │   ├── manifest.json
@@ -27,31 +27,31 @@ use crate::manifest::BundleManifest;
 ///     └── ...
 /// ```
 pub struct BundleStorage {
-    /// Root bundles directory: `~/.hwwtui/bundles`.
+    /// Root bundles directory: `~/.hwwctl/bundles`.
     base_dir: PathBuf,
 }
 
 impl BundleStorage {
     /// Create a new `BundleStorage`, ensuring the base directory exists.
     ///
-    /// The base directory is `~/.hwwtui/bundles`.  It is created (with all
+    /// The base directory is `~/.hwwctl/bundles`.  It is created (with all
     /// parent directories) if it does not yet exist.
     pub fn new() -> anyhow::Result<Self> {
         let home = dirs::home_dir().context("could not determine home directory")?;
-        let base_dir = home.join(".hwwtui").join("bundles");
+        let base_dir = home.join(".hwwctl").join("bundles");
         std::fs::create_dir_all(&base_dir)
             .with_context(|| format!("failed to create bundles dir: {}", base_dir.display()))?;
         Ok(Self { base_dir })
     }
 
-    /// Returns `~/.hwwtui/bundles`.
+    /// Returns `~/.hwwctl/bundles`.
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
     }
 
     /// Returns the directory for a specific wallet type.
     ///
-    /// Example: `~/.hwwtui/bundles/trezor/`
+    /// Example: `~/.hwwctl/bundles/trezor/`
     pub fn bundle_dir(&self, wallet_type: WalletType) -> PathBuf {
         self.base_dir.join(wallet_dir_name(wallet_type))
     }

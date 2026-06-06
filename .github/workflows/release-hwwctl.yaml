@@ -3,7 +3,7 @@ name: Release hwwctl
 # Two ways to fire this:
 #
 # 1. Push a tag of the form `hwwctl-vX.Y.Z` — the workflow checks
-#    out at that tag and reads the version off `crates/hwwcli/Cargo.toml`.
+#    out at that tag and reads the version off `crates/hwwctl/Cargo.toml`.
 # 2. Manually via the Actions UI (`workflow_dispatch`). The optional
 #    `tag` input lets you cut a release from any ref without first
 #    pushing a tag — useful for prereleases.
@@ -64,12 +64,12 @@ jobs:
           fi
           # Cross-check against Cargo.toml so we can't ship a binary
           # whose --version string disagrees with the release tag.
-          CARGO_VERSION=$(grep -m1 '^version' crates/hwwcli/Cargo.toml | cut -d'"' -f2)
+          CARGO_VERSION=$(grep -m1 '^version' crates/hwwctl/Cargo.toml | cut -d'"' -f2)
           # Strip any prerelease suffix off the tag's version for
           # the Cargo comparison (Cargo.toml carries only X.Y.Z).
           TAG_CORE="${VERSION%%-*}"
           if [ "$TAG_CORE" != "$CARGO_VERSION" ]; then
-            echo "::error::tag version core ($TAG_CORE) does not match crates/hwwcli/Cargo.toml ($CARGO_VERSION). Bump Cargo.toml first."
+            echo "::error::tag version core ($TAG_CORE) does not match crates/hwwctl/Cargo.toml ($CARGO_VERSION). Bump Cargo.toml first."
             exit 1
           fi
           echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
@@ -95,7 +95,7 @@ jobs:
             libusb-1.0-0-dev libudev-dev pkg-config libclang-dev
 
       - name: Build hwwctl (release)
-        run: cargo build --release -p hwwcli
+        run: cargo build --release -p hwwctl
 
       - name: Strip + package
         run: |
