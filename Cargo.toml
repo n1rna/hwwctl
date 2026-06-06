@@ -9,6 +9,21 @@ members = [
     "crates/control",
     "crates/hwwcli",
 ]
+# Vendored firmware repos checked out by the bundle-build CI live
+# alongside our workspace root and contain their own Cargo packages
+# (e.g. bitbox02-firmware/tools/prost-build-proto). Without an
+# explicit exclusion, cargo's parent-traversal lands on this manifest
+# and refuses to compile those packages because they aren't members.
+# Excluding the firmware trees keeps cargo away from them when
+# building tools from inside the checkout.
+exclude = [
+    "bitbox02-firmware",
+    "trezor-firmware",
+    "coldcard-firmware",
+    "specter-diy",
+    "speculos",
+    "jade",
+]
 
 [workspace.dependencies]
 # Async runtime
