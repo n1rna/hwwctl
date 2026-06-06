@@ -1,0 +1,304 @@
+name: hwwctl smoke
+
+# Runs on the feature branch (and any future hwwctl-* branches) and
+# can be fired manually from the Actions tab. We don't run on every
+# PR / push to main yet — the BitBox02 job builds the simulator from
+# source (~10 min) and we want to keep main's CI tight until this is
+# stable.
+on:
+  push:
+    branches:
+      - 'feat/hwwctl-*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  HWWCTL_SOCKET: /tmp/hwwctl.sock
+  HWWCTL_LOG: /tmp/hwwctl.log
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast scaffolding smoke. No bundle, no UHID — just verifies the
+  # IPC, auto-spawn, error mapping, and signal handling work on
+  # Linux. Catches regressions in serialization / framing / clap.
+  # ---------------------------------------------------------------------------
+  scaffold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-hwwctl-scaffold-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-hwwctl-scaffold-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libusb-1.0-0-dev libudev-dev pkg-config libclang-dev jq
+
+      - name: Build hwwctl (release)
+        run: cargo build --release -p hwwcli
+
+      - name: Smoke — ping
+        run: |
+          set -euo pipefail
+          rm -f "$HWWCTL_SOCKET" "$HWWCTL_LOG"
+          out=$(./target/release/hwwctl --json ping)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "pong" ]
+          [ "$(echo "$out" | jq -r .protocol_version)" = "1" ]
+
+      - name: Smoke — status (empty)
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json status)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "status" ]
+          [ "$(echo "$out" | jq -r '.instances | length')" = "0" ]
+
+      - name: Smoke — start without bundle returns BundleMissing
+        run: |
+          set -euo pipefail
+          # No BitBox02 bundle installed → BundleMissing. Exit code 1
+          # for daemon-side error; we check the code, not the message.
+          # `set -e` would abort on the expected non-zero exit, so we
+          # wrap in `|| true` and inspect the captured output.
+          out=$(./target/release/hwwctl --json start bitbox02 || true)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "error" ]
+          [ "$(echo "$out" | jq -r .code)" = "BUNDLE_MISSING" ]
+
+      - name: Smoke — stop unknown id is idempotent
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json stop bitbox02-ffffff)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "stopped" ]
+
+      - name: Smoke — shutdown
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json shutdown)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "shutting_down" ]
+          # Daemon should be gone within a couple of seconds.
+          for _ in $(seq 1 20); do
+            if ! [ -S "$HWWCTL_SOCKET" ]; then exit 0; fi
+            sleep 0.2
+          done
+          echo "daemon socket still present after shutdown"
+          exit 1
+
+      - name: Upload daemon log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scaffold-daemon-log
+          path: /tmp/hwwctl.log
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Full BitBox02 flow. Builds the simulator bundle from source, then
+  # runs hwwctl start, verifies the UHID device shows up in /dev,
+  # confirms hidapi enumerates it with the expected serial, and cleans
+  # up. This is the test that proves daemon → UHID → kernel works
+  # end-to-end without a desktop app.
+  # ---------------------------------------------------------------------------
+  bitbox02-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout bitbox02-firmware
+        uses: actions/checkout@v4
+        with:
+          repository: BitBoxSwiss/bitbox02-firmware
+          path: bitbox02-firmware
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build gcc g++ protobuf-compiler \
+            libusb-1.0-0-dev libudev-dev pkg-config \
+            python3 python3-pip libcmocka-dev libhidapi-dev libprotobuf-dev \
+            libclang-dev jq
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-hwwctl-bb02-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-hwwctl-bb02-
+
+      - name: Install Rust tools for BitBox02 firmware build
+        run: |
+          BB_TOOLCHAIN=$(grep 'channel' bitbox02-firmware/src/rust/rust-toolchain.toml | cut -d'"' -f2)
+          rustup toolchain install "${BB_TOOLCHAIN}"
+          rustup component add rust-src --toolchain "${BB_TOOLCHAIN}-x86_64-unknown-linux-gnu"
+          cargo install cbindgen bindgen-cli
+          cd bitbox02-firmware/tools/prost-build-proto && cargo build --release
+          cp target/release/prost-build-proto ~/.cargo/bin/
+
+      - name: Build BitBox02 simulator bundle
+        run: |
+          FIRMWARE_DIR=bitbox02-firmware ./scripts/build/bitbox02.sh
+
+      - name: Install bundle to ~/.hwwtui/bundles/bitbox02
+        run: |
+          set -euo pipefail
+          TARBALL=hwwtui-bitbox02-linux-x86_64.tar.gz
+          DEST="$HOME/.hwwtui/bundles/bitbox02"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          tar xzf "$TARBALL" --strip-components=1 -C "$DEST"
+          SIZE=$(du -sb "$DEST" | cut -f1)
+          BINARY=$(cd "$DEST" && find . -maxdepth 1 -type f -executable | head -1 | sed 's|^\./||')
+          cat > "$DEST/manifest.json" <<EOF
+          {
+            "wallet_type": "bitbox02",
+            "version": "ci",
+            "platform": "linux-x86_64",
+            "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "size_bytes": ${SIZE},
+            "emulator_binary": "${BINARY:-unknown}",
+            "firmware_dir": null,
+            "build_info": null
+          }
+          EOF
+          ls -lh "$DEST"
+          cat "$DEST/manifest.json"
+
+      - name: Build hwwctl + hidapi probe
+        run: |
+          cargo build --release -p hwwcli
+          # Compile-only — the probe runs after the daemon spawns an
+          # instance. Marked `--ignored` so a stray `cargo test` won't
+          # try to run it without env vars set.
+          cargo test --release -p bridge --test hidapi_probe --no-run
+
+      - name: Load uhid kernel module + open /dev/uhid
+        run: |
+          sudo modprobe uhid
+          # On default GH runners /dev/uhid is root:root mode 0600.
+          # Easiest: chmod 666 for the duration of the job. We're not
+          # exposing the runner to anything that wasn't already there.
+          sudo chmod 666 /dev/uhid
+          ls -la /dev/uhid
+
+      - name: Start daemon
+        run: |
+          set -euo pipefail
+          rm -f "$HWWCTL_SOCKET" "$HWWCTL_LOG"
+          # Daemon stays alive for the rest of the job. nohup +
+          # disown so the step's shell exits cleanly.
+          nohup ./target/release/hwwctl daemon --log-file "$HWWCTL_LOG" > /tmp/hwwctl-stdio.log 2>&1 &
+          echo $! > /tmp/hwwctl.pid
+          disown || true
+          # Wait for the socket.
+          for _ in $(seq 1 50); do
+            [ -S "$HWWCTL_SOCKET" ] && break
+            sleep 0.1
+          done
+          [ -S "$HWWCTL_SOCKET" ] || { echo "daemon never bound socket"; cat "$HWWCTL_LOG" || true; exit 1; }
+
+      - name: Ping
+        run: ./target/release/hwwctl --json ping | tee /tmp/ping.json
+
+      - name: Start BitBox02 instance
+        id: start
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json start bitbox02)
+          echo "$out" | tee /tmp/start.json
+          # Sanity: shape + state.
+          [ "$(echo "$out" | jq -r .kind)" = "started" ]
+          [ "$(echo "$out" | jq -r .state)" = "running" ]
+          serial=$(echo "$out" | jq -r .serial)
+          vid=$(echo "$out" | jq -r .vid)
+          pid=$(echo "$out" | jq -r .pid)
+          instance=$(echo "$out" | jq -r .instance)
+          hidraw=$(echo "$out" | jq -r .hidraw)
+          echo "serial=$serial"   >> "$GITHUB_OUTPUT"
+          echo "vid=$vid"         >> "$GITHUB_OUTPUT"
+          echo "pid=$pid"         >> "$GITHUB_OUTPUT"
+          echo "instance=$instance" >> "$GITHUB_OUTPUT"
+          echo "hidraw=$hidraw"   >> "$GITHUB_OUTPUT"
+          # hidraw must be a non-null /dev path that exists.
+          if [ "$hidraw" = "null" ] || [ -z "$hidraw" ]; then
+            echo "ERROR: hidraw field is null — kernel did not enumerate the UHID device in time"
+            exit 1
+          fi
+          [ -e "$hidraw" ] || { echo "ERROR: hidraw path $hidraw does not exist"; exit 1; }
+          ls -la "$hidraw"
+
+      - name: Verify hidapi enumerates the device
+        env:
+          HWWCTL_EXPECT_SERIAL: ${{ steps.start.outputs.serial }}
+          HWWCTL_EXPECT_VID: ${{ steps.start.outputs.vid }}
+          HWWCTL_EXPECT_PID: ${{ steps.start.outputs.pid }}
+        run: |
+          cargo test --release -p bridge --test hidapi_probe -- --ignored --nocapture
+
+      - name: Stop instance
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json stop '${{ steps.start.outputs.instance }}')
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "stopped" ]
+
+      - name: Status after stop is empty
+        run: |
+          set -euo pipefail
+          out=$(./target/release/hwwctl --json status)
+          echo "$out"
+          [ "$(echo "$out" | jq -r '.instances | length')" = "0" ]
+
+      - name: Shutdown daemon
+        run: |
+          set -euo pipefail
+          ./target/release/hwwctl --json shutdown
+          # Daemon should be gone shortly.
+          for _ in $(seq 1 20); do
+            [ -S "$HWWCTL_SOCKET" ] || exit 0
+            sleep 0.2
+          done
+          echo "daemon socket still present after shutdown"
+          exit 1
+
+      - name: Upload daemon log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitbox02-daemon-log
+          path: |
+            /tmp/hwwctl.log
+            /tmp/hwwctl-stdio.log
+            /tmp/start.json
+            /tmp/ping.json
+          if-no-files-found: ignore
+
+      - name: Upload built bundle (for local reuse)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hwwtui-bitbox02-linux-x86_64
+          path: hwwtui-bitbox02-linux-x86_64.tar.gz
