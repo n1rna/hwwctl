@@ -135,11 +135,15 @@ sidecar; the version string in `--version` matches the release tag.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — workspace structure, data
+Full documentation lives at **[hwwctl.n1rna.net](https://hwwctl.n1rna.net)**.
+
+In-repo sources (the website is built from these):
+
+- [Architecture](docs/architecture.md) — workspace structure, data
   flow, key types
-- [Wallet Reference](docs/WALLETS.md) — per-wallet details, transport,
+- [Wallet Reference](docs/wallets.md) — per-wallet details, transport,
   build deps, known issues
-- [Development Guide](docs/DEVELOPMENT.md) — building, testing, CI,
+- [Development Guide](docs/development.md) — building, testing, CI,
   adding new wallets
 
 ## License

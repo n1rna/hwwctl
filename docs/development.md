@@ -1,4 +1,7 @@
-# Development Guide
+---
+title: Development guide
+description: Building, testing, and contributing to hwwctl.
+---
 
 ## Prerequisites
 

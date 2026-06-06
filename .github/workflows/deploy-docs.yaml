@@ -1,0 +1,87 @@
+name: Deploy docs site
+
+# Builds `website/` (Astro + Starlight, loads markdown from `docs/`)
+# and ships it to GitHub Pages at https://hwwctl.n1rna.net.
+#
+# Path-filtered so a Rust-only change doesn't trigger a Pages
+# deploy. The CNAME file in website/public/ pins the custom
+# domain.
+#
+# Set GH Pages source to "GitHub Actions" once in repo Settings →
+# Pages. DNS: `hwwctl` CNAME → `n1rna.github.io.` (or the apex
+# variant if that's how your other subdomains are configured).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "docs/**"
+      - ".github/workflows/deploy-docs.yaml"
+  pull_request:
+    paths:
+      - "website/**"
+      - "docs/**"
+      - ".github/workflows/deploy-docs.yaml"
+  workflow_dispatch:
+
+# Allow the workflow to push to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deploy. Don't cancel in-progress runs —
+# Pages deploys aren't idempotent if interrupted mid-upload.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  BUILD_PATH: "website"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: bun install
+        working-directory: ${{ env.BUILD_PATH }}
+
+      - name: Build with Astro
+        run: bun run build
+        working-directory: ${{ env.BUILD_PATH }}
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.BUILD_PATH }}/dist
+
+  deploy:
+    name: Deploy
+    # Only deploy on push to main (or manual dispatch). PRs build to
+    # catch regressions but don't publish.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

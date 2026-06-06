@@ -1,4 +1,7 @@
-# TODO / Known Issues
+---
+title: Roadmap & known issues
+description: What's not yet wired into the daemon, missing features, and known limitations.
+---
 
 ## UHID Bridge
 
