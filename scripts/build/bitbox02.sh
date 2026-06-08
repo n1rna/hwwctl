@@ -51,5 +51,27 @@ cat > "${BUNDLE_DIR}/bundle-info.json" <<EOF
 }
 EOF
 
+# `manifest.json` is what the hwwctl daemon's BundleManager reads at
+# runtime to locate the emulator binary. Ship it inside the tarball
+# so a consumer can `tar -x --strip-components=1` straight into
+# ~/.hwwctl/bundles/bitbox02/ and have the daemon find the binary
+# without an extra install step. `installed_at` here is actually the
+# build timestamp — BundleManager doesn't enforce strict semantics on
+# the field, and an auto-installed bundle overwrites this manifest
+# with its own at install time anyway.
+SIZE_BYTES=$(du -sb "${BUNDLE_DIR}" | cut -f1)
+cat > "${BUNDLE_DIR}/manifest.json" <<EOF
+{
+  "wallet_type": "bitbox02",
+  "version": "${BUNDLE_VERSION}",
+  "platform": "${PLATFORM}",
+  "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "size_bytes": ${SIZE_BYTES},
+  "emulator_binary": "bitbox02-simulator",
+  "firmware_dir": null,
+  "build_info": null
+}
+EOF
+
 tar czf "${WORK_DIR}/hwwctl-bitbox02-${PLATFORM}.tar.gz" -C "${WORK_DIR}" "hwwctl-bitbox02-${PLATFORM}"
 echo "==> Done: hwwctl-bitbox02-${PLATFORM}.tar.gz"
