@@ -261,6 +261,22 @@ jobs:
         run: |
           set -euxo pipefail
           ls -la dist
+          # Build release notes line-by-line so multi-line markdown
+          # doesn't fight YAML block-scalar indentation. (Earlier
+          # inline `--notes "...multi-line..."` and a heredoc both
+          # broke either the YAML or the markdown — see
+          # hwwctl-v0.1.1 first attempt.)
+          {
+            echo "hwwctl release \`${VERSION}\` (Linux x86_64)."
+            echo ""
+            echo "Assets:"
+            echo ""
+            echo "- \`hwwctl-linux-x86_64.tar.gz\` — the hwwctl binary."
+            echo "- \`hwwctl-bitbox02-linux-x86_64.tar.gz\` — BitBox02 simulator bundle. Extract with \`--strip-components=1\` into \`~/.hwwctl/bundles/bitbox02/\`. Ships a \`manifest.json\` so it's install-ready."
+            echo ""
+            echo "Each asset has a matching \`.sha256\` sidecar."
+          } > /tmp/release-notes.md
+          cat /tmp/release-notes.md
           # Idempotent: if the release already exists (e.g. tag was
           # pushed then re-run via dispatch), upload --clobber the
           # assets onto it. Otherwise create it.
@@ -273,14 +289,7 @@ jobs:
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "hwwctl $VERSION" \
-              --notes "hwwctl release \`$VERSION\` (Linux x86_64).
-
-Assets:
-
-- \`hwwctl-linux-x86_64.tar.gz\` — the hwwctl binary.
-- \`hwwctl-bitbox02-linux-x86_64.tar.gz\` — BitBox02 simulator bundle. Extract with \`--strip-components=1\` into \`~/.hwwctl/bundles/bitbox02/\`. The hwwctl daemon writes its \`manifest.json\` at install time, so the tarball doesn't need to ship one.
-
-Each asset has a matching \`.sha256\` sidecar." \
+              --notes-file /tmp/release-notes.md \
               "${FLAGS[@]}" \
               dist/*
           fi
