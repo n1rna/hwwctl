@@ -24,7 +24,7 @@ desktop wallet app can talk to.
 ### Option A — pre-built release
 
 ```bash
-curl -fsSL https://github.com/n1rna/hwwctl/releases/download/hwwctl-v0.1.1/hwwctl-linux-x86_64.tar.gz \
+curl -fsSL https://github.com/n1rna/hwwctl/releases/download/hwwctl-v0.1.2/hwwctl-linux-x86_64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 hwwctl --version
 ```
@@ -49,7 +49,7 @@ ship as bundles under `~/.hwwctl/bundles/{wallet}/`.
 ### Option A — download a pre-built bundle (BitBox02 only, for now)
 
 ```bash
-VERSION=hwwctl-v0.1.1
+VERSION=hwwctl-v0.1.2
 mkdir -p ~/.hwwctl/bundles/bitbox02
 curl -fsSL "https://github.com/n1rna/hwwctl/releases/download/${VERSION}/hwwctl-bitbox02-linux-x86_64.tar.gz" \
   -o /tmp/hwwctl-bitbox02.tar.gz

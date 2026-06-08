@@ -115,16 +115,25 @@ async fn handle_connection(
         return Ok(());
     };
 
-    let response = dispatch(request, &registry, &shutdown).await;
+    // Notice if this is a shutdown request BEFORE dispatch consumes
+    // it, so we can sequence the shutdown notification AFTER the
+    // response has hit the wire.
+    let is_shutdown = matches!(request, Request::Shutdown);
+    let response = dispatch(request, &registry).await;
     write_frame(&mut stream, &response).await?;
+
+    // Now that the client has the response in its kernel buffer, it
+    // is safe to fire the daemon-wide shutdown signal. Doing this
+    // earlier (inside `dispatch`) raced the main loop's
+    // `process::exit` against our `write_frame` — see the v0.1.1
+    // smoke regression in run 27140773410.
+    if is_shutdown {
+        shutdown.notify_waiters();
+    }
     Ok(())
 }
 
-async fn dispatch(
-    request: Request,
-    registry: &Registry,
-    shutdown: &tokio::sync::Notify,
-) -> Response {
+async fn dispatch(request: Request, registry: &Registry) -> Response {
     match request {
         Request::Ping => Response::Pong(control::PongInfo {
             daemon_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -152,8 +161,10 @@ async fn dispatch(
             Err(e) => Response::Error(e),
         },
         Request::Shutdown => {
+            // Drain all instances; the actual daemon-loop exit is
+            // signaled by `handle_connection` after the response has
+            // been written. See the note there.
             registry.shutdown().await;
-            shutdown.notify_waiters();
             Response::ShuttingDown
         }
     }
