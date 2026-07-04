@@ -198,6 +198,27 @@ async fn start_bitbox02(
         }
     }
 
+    // 3b. Seed the simulator over direct TCP, before the bridge attaches.
+    //     A fresh BitBox02 simulator boots UNINITIALIZED. An uninitialized
+    //     device can't be paired over the UHID bridge (the host's pairing
+    //     verification lands on a device that never entered that state →
+    //     "wrong state") and can't produce xpubs. bitbox-api's simulator
+    //     mode drives the same restore-from-mnemonic flow as hwwctl's
+    //     bitbox02_e2e test. The simulator is single-client, so this MUST
+    //     run while the bridge is detached; the TCP session is dropped
+    //     before the bridge connects.
+    if let Err(e) = seed_bitbox02(port).await {
+        let _ = emu.stop().await;
+        return Err(CtlError::new(
+            ErrorCode::Internal,
+            format!("BitBox02 simulator seeding failed: {e:#}"),
+        ));
+    }
+    info!(%id, "BitBox02 simulator seeded and initialized");
+    // Let the seeding TCP session's socket fully close before the bridge
+    // opens the next (single-client) session. Mirrors bitbox02_e2e.rs.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
     // 4. Build and start the UHID bridge.
     let bridge_cfg = GenericBridgeConfig::new(
         hid.vid,
@@ -328,6 +349,54 @@ async fn start_bitbox02(
 fn bundle_manager() -> Result<BundleManager, CtlError> {
     let repo = std::env::var("HWWCTL_GITHUB_REPO").unwrap_or_else(|_| "n1rna/hwwctl".to_string());
     BundleManager::new(&repo).map_err(super::internal_err)
+}
+
+/// Seed a freshly-started BitBox02 simulator so it reports `initialized`.
+///
+/// Connects over direct TCP (bitbox-api simulator mode), pairs, and runs
+/// restore-from-mnemonic. The simulator has no confirmation UI, so it
+/// auto-accepts pairing and the restore, deriving a deterministic test
+/// seed. Runs on a dedicated blocking runtime because bitbox-api's
+/// simulator transport uses blocking socket I/O. This is the same flow as
+/// the `bitbox02_e2e` integration test's "initialize via TCP" phase.
+#[cfg(target_os = "linux")]
+async fn seed_bitbox02(port: u16) -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()?;
+        rt.block_on(async move {
+            use bitbox_api::runtime::TokioRuntime;
+            let endpoint = format!("127.0.0.1:{port}");
+            let noise = Box::new(bitbox_api::NoiseConfigNoCache {});
+            let bitbox = bitbox_api::BitBox::<TokioRuntime>::from_simulator(Some(&endpoint), noise)
+                .await
+                .map_err(|e| anyhow::anyhow!("from_simulator: {e}"))?;
+            let pairing = bitbox
+                .unlock_and_pair()
+                .await
+                .map_err(|e| anyhow::anyhow!("unlock_and_pair: {e}"))?;
+            let paired = pairing
+                .wait_confirm()
+                .await
+                .map_err(|e| anyhow::anyhow!("wait_confirm: {e}"))?;
+            paired
+                .restore_from_mnemonic()
+                .await
+                .map_err(|e| anyhow::anyhow!("restore_from_mnemonic: {e}"))?;
+            let info = paired
+                .device_info()
+                .await
+                .map_err(|e| anyhow::anyhow!("device_info: {e}"))?;
+            if !info.initialized {
+                anyhow::bail!("simulator did not report initialized after restore_from_mnemonic");
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("seed task panicked: {e}"))?
 }
 
 #[cfg(target_os = "linux")]

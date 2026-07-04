@@ -18,6 +18,10 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
+# Seeds the BitBox02 simulator (restore-from-mnemonic over direct TCP)
+# before the UHID bridge attaches — a fresh sim boots uninitialized and
+# can't pair over UHID or produce xpubs otherwise. Simulator mode only.
+bitbox-api = { version = "0.9.0", default-features = false, features = ["simulator", "multithreaded", "tokio"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
