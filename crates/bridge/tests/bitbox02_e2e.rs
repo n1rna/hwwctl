@@ -54,7 +54,13 @@ async fn start_bitbox02_emulator() -> Box<dyn Emulator> {
             },
         )
         .with_arg("--port")
-        .with_arg("15423"),
+        .with_arg("15423")
+        // BitBox02 simulator is single-client — any readiness probe
+        // (even SO_LINGER(0)/RST) races the simulator's initial socket
+        // write and SIGPIPEs it before we get to bitbox-api's
+        // `from_simulator`. Same fix the daemon uses in
+        // `spawn::start_bitbox02`.
+        .with_skip_probe_delay(Duration::from_millis(1500)),
     );
     emu.start().await.expect("BitBox02 start failed");
     assert_eq!(emu.status(), EmulatorStatus::Running);
