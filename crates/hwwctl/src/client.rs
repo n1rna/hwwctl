@@ -65,10 +65,12 @@ fn build_request(cmd: Cmd) -> anyhow::Result<Request> {
             wallet,
             no_wait,
             timeout,
+            mnemonic,
         } => Request::Start(StartRequest {
             wallet,
             wait_ready: !no_wait,
             timeout_secs: timeout,
+            mnemonic,
         }),
         Cmd::Stop { instance } => Request::Stop(StopRequest {
             instance: InstanceId::new(instance),

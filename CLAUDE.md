@@ -104,8 +104,12 @@ parallel workers don't share instance state.
 ### CLI / IPC
 
 - `ping` — daemon liveness + version
-- `start <wallet> [--no-wait] [--timeout N]` — spawn an instance,
-  return `InstanceSummary`
+- `start <wallet> [--no-wait] [--timeout N] [--mnemonic "…"]` — spawn
+  an instance, return `InstanceSummary`. `--mnemonic` (BitBox02 only)
+  seeds the simulator with the given BIP39 words instead of its
+  built-in seed; the daemon passes them as
+  `$BITBOX02_SIMULATOR_MNEMONIC`, which the simulator only reads
+  because `scripts/build/bitbox02.sh` patches its mnemonic stub
 - `stop <id>` — idempotent (unknown id → ok)
 - `status [id]` — snapshot all or one
 - `logs <id> [--tail N] [--source emulator|bridge|all]` — unified
@@ -158,6 +162,7 @@ Desktop App (hidapi) ↔ /dev/hidraw ↔ /dev/uhid ↔ GenericBridge ↔ Emulato
 | `HWWCTL_SOCKET` | resolved per `default_socket_path()` | Daemon socket. |
 | `HWWCTL_LOG` | `/tmp/hwwctl.log` | Daemon log file (auto-spawn path). |
 | `HWWCTL_LOG_LEVEL` | `info,hwwctl=debug,bridge=debug,emulators=debug` | tracing filter. |
+| `HWWCTL_MNEMONIC` | (none) | Default for `start --mnemonic`. |
 | `HWWCTL_GITHUB_REPO` | `n1rna/hwwctl` | Repo for bundle downloads. |
 | `TREZOR_FIRMWARE_PATH` | (none) | Local trezor-firmware/core path. |
 | `TREZOR_PORT` | `21324` | UDP port for the Trezor emulator. |

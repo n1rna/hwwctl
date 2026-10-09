@@ -42,6 +42,9 @@ just build-release
 ./target/release/hwwctl start bitbox02
 # → {"kind":"started", "serial":"hwwctl-bb02-…", "hidraw":"/dev/hidrawN", ...}
 
+# Every instance has the same keys unless you seed it yourself
+./target/release/hwwctl start bitbox02 --mnemonic "abandon abandon … about"
+
 # When done
 ./target/release/hwwctl shutdown
 ```
@@ -52,7 +55,7 @@ just build-release
 |---|---|
 | `hwwctl daemon` | Run the daemon explicitly (otherwise auto-spawned). |
 | `hwwctl ping` | Liveness check; returns daemon + protocol versions. |
-| `hwwctl start <wallet> [--no-wait] [--timeout N]` | Spawn an emulator instance. Returns serial + hidraw path + VID/PID. |
+| `hwwctl start <wallet> [--no-wait] [--timeout N] [--mnemonic "…"]` | Spawn an emulator instance. Returns serial + hidraw path + VID/PID. `--mnemonic` (BitBox02) seeds it with your own BIP39 words instead of the built-in test seed. |
 | `hwwctl stop <id>` | Idempotent teardown. |
 | `hwwctl status [id]` | Snapshot of all instances (or one). |
 | `hwwctl logs <id> [--tail N] [--source emulator\|bridge\|all]` | Unified timeline of emulator stdout and bridge HID traffic. |

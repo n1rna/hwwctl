@@ -17,6 +17,41 @@ BUNDLE_DIR="${WORK_DIR}/hwwctl-bitbox02-${PLATFORM}"
 echo "==> Building BitBox02 simulator from ${FIRMWARE_DIR}"
 
 cd "${FIRMWARE_DIR}"
+
+# The headless simulator restores from one hardcoded mnemonic, so every
+# instance has the same keys. Teach its mnemonic stub to read the words from
+# $BITBOX02_SIMULATOR_MNEMONIC instead (the daemon sets it for
+# `hwwctl start bitbox02 --mnemonic ...`); unset keeps the upstream default.
+# An in-place rewrite rather than a patch file, so it applies across firmware
+# versions and this script stays the only input to the bundle build. If
+# upstream moves the stub, fail here rather than ship an unpatched bundle.
+MNEMONIC_STUB="src/rust/bitbox02-rust/src/workflow/mnemonic_c_unit_tests.rs"
+if grep -q 'BITBOX02_SIMULATOR_MNEMONIC' "${MNEMONIC_STUB}"; then
+    echo "==> Simulator mnemonic stub already patched"
+else
+    echo "==> Patching simulator mnemonic stub"
+    # The firmware crates are no_std with their own panic handler, so `std::env`
+    # is out; the simulator links libc, so ask it directly.
+    perl -0pi -e 's{^(\s*)let words = ("boring [a-z ]+");$}{$1#[allow(unsafe_code)]
+$1fn hwwctl_mnemonic_from_env() -> Option<String> {
+$1    unsafe extern "C" {
+$1        fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
+$1    }
+$1    let ptr = unsafe { getenv(b"BITBOX02_SIMULATOR_MNEMONIC\\0".as_ptr().cast()) };
+$1    if ptr.is_null() {
+$1        return None;
+$1    }
+$1    let words = unsafe { core::ffi::CStr::from_ptr(ptr) }.to_str().ok()?.trim();
+$1    if words.is_empty() { None } else { Some(words.into()) }
+$1}
+$1let words_owned: String = hwwctl_mnemonic_from_env().unwrap_or_else(|| $2.into());
+$1let words = words_owned.as_str();}m' "${MNEMONIC_STUB}"
+    grep -q 'BITBOX02_SIMULATOR_MNEMONIC' "${MNEMONIC_STUB}" || {
+        echo "ERROR: could not patch ${MNEMONIC_STUB} — the stub changed upstream" >&2
+        exit 1
+    }
+fi
+
 make simulator
 
 # Locate the simulator binary (build dir name varies: build-build-noasan, build-sim, etc).

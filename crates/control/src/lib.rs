@@ -134,6 +134,31 @@ pub struct StartRequest {
     /// Override the default startup timeout for this instance.
     #[serde(default)]
     pub timeout_secs: Option<u64>,
+    /// BIP39 recovery words to seed the emulator with, instead of the
+    /// wallet's built-in test seed. Lets each instance have its own keys.
+    /// BitBox02 only, and needs a bundle built from hwwctl 0.1.4 or later.
+    #[serde(default)]
+    pub mnemonic: Option<String>,
+}
+
+/// Check a `--mnemonic` value has the shape of a BIP39 sentence and return
+/// it with single spaces between words. Only the shape is checked here;
+/// the emulator itself rejects unknown words or a bad checksum.
+pub fn normalize_mnemonic(mnemonic: &str) -> Result<String, String> {
+    let words: Vec<&str> = mnemonic.split_whitespace().collect();
+    if !matches!(words.len(), 12 | 18 | 24) {
+        return Err(format!(
+            "mnemonic must be 12, 18 or 24 words, got {}",
+            words.len()
+        ));
+    }
+    if let Some(bad) = words
+        .iter()
+        .find(|w| !w.bytes().all(|b| b.is_ascii_lowercase()))
+    {
+        return Err(format!("mnemonic words must be lowercase a-z, got {bad:?}"));
+    }
+    Ok(words.join(" "))
 }
 
 fn default_true() -> bool {
@@ -324,7 +349,8 @@ pub enum ErrorCode {
     BadRequest,
     /// Wallet type not yet supported by this daemon build.
     WalletUnsupported,
-    /// Bundle for the wallet is not installed locally.
+    /// Bundle for the wallet is not installed locally, or is too old for
+    /// what the request asked of it.
     BundleMissing,
     /// Emulator child process failed to spawn.
     SpawnFailed,
@@ -436,6 +462,30 @@ mod hex_u16 {
 mod tests {
     use super::*;
     use tokio::io::duplex;
+
+    #[test]
+    fn normalize_mnemonic_accepts_bip39_lengths() {
+        let twelve = "abandon ".repeat(11) + "about";
+        assert_eq!(normalize_mnemonic(&twelve).unwrap(), twelve);
+        let spaced = format!("  {}\n", twelve.replace(' ', "  "));
+        assert_eq!(normalize_mnemonic(&spaced).unwrap(), twelve);
+        assert!(normalize_mnemonic(&"abandon ".repeat(18)).is_ok());
+        assert!(normalize_mnemonic(&"abandon ".repeat(24)).is_ok());
+    }
+
+    #[test]
+    fn normalize_mnemonic_rejects_bad_shapes() {
+        assert!(normalize_mnemonic("").is_err());
+        assert!(normalize_mnemonic(&"abandon ".repeat(13)).is_err());
+        assert!(normalize_mnemonic(&("abandon ".repeat(11) + "About")).is_err());
+        assert!(normalize_mnemonic(&("abandon ".repeat(11) + "ab0ut")).is_err());
+    }
+
+    #[test]
+    fn start_request_mnemonic_is_optional_on_the_wire() {
+        let req: StartRequest = serde_json::from_str(r#"{"wallet":"bitbox02"}"#).unwrap();
+        assert!(req.mnemonic.is_none());
+    }
 
     #[test]
     fn wallet_parse_roundtrip() {

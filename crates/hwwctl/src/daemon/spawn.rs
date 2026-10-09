@@ -47,6 +47,19 @@ use super::instance::Instance;
 #[cfg(target_os = "linux")]
 const HIDRAW_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Environment variable the patched BitBox02 simulator reads its recovery
+/// words from. Must match the patch in `scripts/build/bitbox02.sh`.
+#[cfg(target_os = "linux")]
+const SIMULATOR_MNEMONIC_ENV: &str = "BITBOX02_SIMULATOR_MNEMONIC";
+
+/// The simulator's built-in recovery words and the root fingerprint they
+/// give — what an instance has when no `--mnemonic` is passed.
+#[cfg(target_os = "linux")]
+const DEFAULT_MNEMONIC: &str = "boring mistake dish oyster truth pigeon viable emerge sort crash \
+    wire portion cannon couple enact box walk height pull today solid off enable tide";
+#[cfg(target_os = "linux")]
+const DEFAULT_ROOT_FINGERPRINT: &str = "4c00739d";
+
 pub(super) async fn start(
     instances: &mut HashMap<InstanceId, Instance>,
     req: StartRequest,
@@ -90,6 +103,13 @@ async fn start_bitbox02(
         .hid
         .as_ref()
         .expect("BitBox02 config always has hid set");
+
+    let mnemonic = req
+        .mnemonic
+        .as_deref()
+        .map(control::normalize_mnemonic)
+        .transpose()
+        .map_err(|e| CtlError::new(ErrorCode::BadRequest, e))?;
 
     // 1. Find the bundle binary.
     let bundle = bundle_manager()?;
@@ -172,6 +192,11 @@ async fn start_bitbox02(
     // session, and a stuck-binding simulator surfaces as a clean
     // ECONNREFUSED a moment later.
     .with_skip_probe_delay(Duration::from_millis(1500));
+    if let Some(words) = &mnemonic {
+        // Read by the simulator's mnemonic stub when step 3b restores it;
+        // see the patch in scripts/build/bitbox02.sh.
+        emu = emu.with_env(SIMULATOR_MNEMONIC_ENV, words);
+    }
 
     if let Err(e) = emu.start().await {
         return Err(CtlError::new(
@@ -207,14 +232,31 @@ async fn start_bitbox02(
     //     bitbox02_e2e test. The simulator is single-client, so this MUST
     //     run while the bridge is detached; the TCP session is dropped
     //     before the bridge connects.
-    if let Err(e) = seed_bitbox02(port).await {
+    let fingerprint = match seed_bitbox02(port).await {
+        Ok(fingerprint) => fingerprint,
+        Err(e) => {
+            let _ = emu.stop().await;
+            return Err(CtlError::new(
+                ErrorCode::Internal,
+                format!("BitBox02 simulator seeding failed: {e:#}"),
+            ));
+        }
+    };
+    // A bundle built before the simulator patch ignores the variable and
+    // restores its built-in seed. Don't hand back a device with the wrong
+    // keys.
+    if mnemonic.as_deref().is_some_and(|m| m != DEFAULT_MNEMONIC)
+        && fingerprint.eq_ignore_ascii_case(DEFAULT_ROOT_FINGERPRINT)
+    {
         let _ = emu.stop().await;
         return Err(CtlError::new(
-            ErrorCode::Internal,
-            format!("BitBox02 simulator seeding failed: {e:#}"),
+            ErrorCode::BundleMissing,
+            "the installed BitBox02 simulator bundle ignored --mnemonic and restored its \
+             built-in seed. It predates custom-seed support; install the bundle from \
+             hwwctl 0.1.4 or later.",
         ));
     }
-    info!(%id, "BitBox02 simulator seeded and initialized");
+    info!(%id, %fingerprint, "BitBox02 simulator seeded and initialized");
     // Let the seeding TCP session's socket fully close before the bridge
     // opens the next (single-client) session. Mirrors bitbox02_e2e.rs.
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -351,16 +393,17 @@ fn bundle_manager() -> Result<BundleManager, CtlError> {
     BundleManager::new(&repo).map_err(super::internal_err)
 }
 
-/// Seed a freshly-started BitBox02 simulator so it reports `initialized`.
+/// Seed a freshly-started BitBox02 simulator so it reports `initialized`,
+/// and return the root fingerprint (hex) of the seed it ended up with.
 ///
 /// Connects over direct TCP (bitbox-api simulator mode), pairs, and runs
 /// restore-from-mnemonic. The simulator has no confirmation UI, so it
-/// auto-accepts pairing and the restore, deriving a deterministic test
-/// seed. Runs on a dedicated blocking runtime because bitbox-api's
+/// auto-accepts pairing and the restore, taking its recovery words from
+/// `$BITBOX02_SIMULATOR_MNEMONIC` or else a built-in test seed. Runs on a dedicated blocking runtime because bitbox-api's
 /// simulator transport uses blocking socket I/O. This is the same flow as
 /// the `bitbox02_e2e` integration test's "initialize via TCP" phase.
 #[cfg(target_os = "linux")]
-async fn seed_bitbox02(port: u16) -> anyhow::Result<()> {
+async fn seed_bitbox02(port: u16) -> anyhow::Result<String> {
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -392,7 +435,11 @@ async fn seed_bitbox02(port: u16) -> anyhow::Result<()> {
             if !info.initialized {
                 anyhow::bail!("simulator did not report initialized after restore_from_mnemonic");
             }
-            Ok::<(), anyhow::Error>(())
+            let fingerprint = paired
+                .root_fingerprint()
+                .await
+                .map_err(|e| anyhow::anyhow!("root_fingerprint: {e}"))?;
+            Ok::<String, anyhow::Error>(fingerprint)
         })
     })
     .await

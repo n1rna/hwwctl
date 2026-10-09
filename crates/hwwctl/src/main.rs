@@ -79,6 +79,11 @@ enum Cmd {
         /// Override the per-instance startup timeout (seconds).
         #[arg(long)]
         timeout: Option<u64>,
+        /// Seed the emulator with these BIP39 recovery words (12, 18 or
+        /// 24, quoted) instead of its built-in test seed, so the instance
+        /// gets its own keys. BitBox02 only.
+        #[arg(long, env = "HWWCTL_MNEMONIC", hide_env_values = true)]
+        mnemonic: Option<String>,
     },
 
     /// Stop a running instance by id. Idempotent.
