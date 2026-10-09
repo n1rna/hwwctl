@@ -77,6 +77,16 @@ jobs:
           [ "$(echo "$out" | jq -r .kind)" = "error" ]
           [ "$(echo "$out" | jq -r .code)" = "BUNDLE_MISSING" ]
 
+      - name: Smoke — malformed --mnemonic returns BadRequest
+        run: |
+          set -euo pipefail
+          # Shape is validated before the bundle lookup, so this is
+          # BAD_REQUEST even with no bundle installed.
+          out=$(./target/release/hwwctl --json start bitbox02 --mnemonic "only three words" || true)
+          echo "$out"
+          [ "$(echo "$out" | jq -r .kind)" = "error" ]
+          [ "$(echo "$out" | jq -r .code)" = "BAD_REQUEST" ]
+
       - name: Smoke — stop unknown id is idempotent
         run: |
           set -euo pipefail
@@ -354,6 +364,22 @@ jobs:
               ''|*[!0-9]*) echo "::error::bridge-stats.$f not a non-negative int: $v"; exit 1 ;;
             esac
           done
+
+      - name: Start a second instance with its own seed (--mnemonic)
+        run: |
+          set -uo pipefail
+          # BIP39 test vector; its root fingerprint is 73c5da0a. The
+          # default instance above keeps the built-in seed (4c00739d),
+          # so this also proves two differently-seeded instances coexist.
+          words="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+          out=$(./target/release/hwwctl --json start bitbox02 --mnemonic "$words" || true)
+          echo "$out"
+          set -e
+          [ "$(echo "$out" | jq -r .kind)" = "started" ] || { echo "::error::start --mnemonic failed: $(echo "$out" | jq -r .message)"; exit 1; }
+          grep -q 'fingerprint=73c5da0a' "$HWWCTL_LOG" || { echo "::error::simulator did not restore from the requested mnemonic"; grep 'seeded and initialized' "$HWWCTL_LOG" || true; exit 1; }
+          grep -q 'fingerprint=4c00739d' "$HWWCTL_LOG" || { echo "::error::default instance lost its built-in seed"; exit 1; }
+          out=$(./target/release/hwwctl --json stop "$(echo "$out" | jq -r .instance)")
+          [ "$(echo "$out" | jq -r .kind)" = "stopped" ]
 
       - name: Stop instance
         run: |

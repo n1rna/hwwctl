@@ -17,6 +17,26 @@ BUNDLE_DIR="${WORK_DIR}/hwwctl-bitbox02-${PLATFORM}"
 echo "==> Building BitBox02 simulator from ${FIRMWARE_DIR}"
 
 cd "${FIRMWARE_DIR}"
+
+# The headless simulator restores from one hardcoded mnemonic, so every
+# instance has the same keys. Teach its mnemonic stub to read the words from
+# $BITBOX02_SIMULATOR_MNEMONIC instead (the daemon sets it for
+# `hwwctl start bitbox02 --mnemonic ...`); unset keeps the upstream default.
+# A one-line rewrite rather than a patch file, so it applies across firmware
+# versions and this script stays the only input to the bundle build. If
+# upstream moves the stub, fail here rather than ship an unpatched bundle.
+MNEMONIC_STUB="src/rust/bitbox02-rust/src/workflow/mnemonic_c_unit_tests.rs"
+if grep -q 'BITBOX02_SIMULATOR_MNEMONIC' "${MNEMONIC_STUB}"; then
+    echo "==> Simulator mnemonic stub already patched"
+else
+    echo "==> Patching simulator mnemonic stub"
+    perl -0pi -e 's{^(\s*)let words = ("boring [a-z ]+");$}{$1extern crate std;\n$1let words_owned: alloc::string::String = match std::env::var("BITBOX02_SIMULATOR_MNEMONIC") {\n$1    Ok(words) if !words.trim().is_empty() => words,\n$1    _ => $2.into(),\n$1};\n$1let words = words_owned.as_str();}m' "${MNEMONIC_STUB}"
+    grep -q 'BITBOX02_SIMULATOR_MNEMONIC' "${MNEMONIC_STUB}" || {
+        echo "ERROR: could not patch ${MNEMONIC_STUB} — the stub changed upstream" >&2
+        exit 1
+    }
+fi
+
 make simulator
 
 # Locate the simulator binary (build dir name varies: build-build-noasan, build-sim, etc).
